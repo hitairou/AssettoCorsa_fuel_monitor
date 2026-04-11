@@ -1,0 +1,35 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+!third_party/*.pyd
+
+# Runtime logs and local diagnostics
+logs/
+*.log
+debug.txt
+ecoran_fuel_monitor_debug.txt
+
+# Local screenshots/captures
+*.png
+*.jpg
+*.jpeg
+*.bmp
+
+# Editor/OS metadata
+.vscode/
+.idea/
+.vs/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+
+# Local environment/config overrides
+*.local.ini
+ui_state.json
+
+# Build/test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

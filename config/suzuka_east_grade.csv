@@ -1,0 +1,28 @@
+# Suzuka East Circuit - Grade profile (FALLBACK / DEBUG use only)
+# Format: distance_m,grade_ratio
+# grade_ratio = dh/ds  (positive = uphill, negative = downhill)
+# PLACEHOLDER VALUES - not used by default (grade_fallback_mode=pitch)
+distance_m,grade_ratio
+0.0,0.000
+100.0,0.002
+200.0,0.005
+300.0,0.010
+400.0,0.015
+500.0,0.012
+600.0,0.008
+700.0,0.002
+800.0,-0.003
+900.0,-0.008
+1000.0,-0.012
+1100.0,-0.010
+1200.0,-0.006
+1300.0,-0.002
+1400.0,0.001
+1500.0,0.003
+1600.0,0.002
+1700.0,0.000
+1800.0,-0.002
+1900.0,-0.004
+2000.0,-0.005
+2100.0,-0.003
+2202.0,0.000
