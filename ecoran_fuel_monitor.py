@@ -137,54 +137,24 @@ def _power_graph_scale_from_state(state, strategy):
         fixed_scale = float(strategy.get("power_graph_scale_w", 2000.0))
         return fixed_scale, None, None
 
-    window_s = float(strategy.get("power_graph_window_s", 10.0))
-    now = _to_float_or_none(getattr(state, "render_time_s", None))
-    if now is None:
-        now = _to_float_or_none(getattr(state, "session_elapsed_time", 0.0)) or 0.0
     samples = []
-    trace_samples = getattr(state, "power_trace_samples", None)
-    if trace_samples is not None and len(trace_samples) > 0:
-        for sample in trace_samples.to_list():
-            sample_time = _to_float_or_none(sample.get("t"))
-            if sample_time is None:
-                continue
-            age = now - sample_time
-            if age < 0.0 or age > window_s:
-                continue
-            for key in ("engine", "roll", "aero", "accel", "grade"):
-                value = _to_float_or_none(sample.get(key))
+    series_pairs = (
+        ("hist_engine", "current_P_engine"),
+        ("hist_roll", "current_P_roll"),
+        ("hist_aero", "current_P_aero"),
+        ("hist_accel", "current_P_accel_term"),
+        ("hist_grade", "current_P_grade_term"),
+    )
+    for hist_attr, current_attr in series_pairs:
+        hist_buf = getattr(state, hist_attr, None)
+        if hist_buf is not None:
+            for value in hist_buf.to_list():
+                value = _to_float_or_none(value)
                 if value is not None:
                     samples.append(abs(value))
-    else:
-        series_pairs = (
-            ("hist_engine", "current_P_engine"),
-            ("hist_roll", "current_P_roll"),
-            ("hist_aero", "current_P_aero"),
-            ("hist_accel", "current_P_accel_term"),
-            ("hist_grade", "current_P_grade_term"),
-        )
-        for hist_attr, current_attr in series_pairs:
-            hist_buf = getattr(state, hist_attr, None)
-            time_buf = getattr(state, "hist_power_time", None)
-            if hist_buf is not None:
-                values = hist_buf.to_list()
-                times = time_buf.to_list() if time_buf is not None else []
-                count = min(len(values), len(times))
-                values = values[-count:]
-                times = times[-count:]
-                for sample_time, value in zip(times, values):
-                    value = _to_float_or_none(value)
-                    sample_time = _to_float_or_none(sample_time)
-                    if value is None or sample_time is None:
-                        continue
-                    if now - sample_time > window_s:
-                        continue
-                    if now - sample_time < 0.0:
-                        continue
-                    samples.append(abs(value))
-            current_value = _to_float_or_none(getattr(state, current_attr, None))
-            if current_value is not None:
-                samples.append(abs(current_value))
+        current_value = _to_float_or_none(getattr(state, current_attr, None))
+        if current_value is not None:
+            samples.append(abs(current_value))
 
     peak_power = max(samples) if samples else 0.0
     margin = float(strategy.get("power_graph_scale_margin", 1.25))
@@ -505,47 +475,25 @@ def acUpdate(delta_t):
         if _cfg_bool(state.strategy.get("debug_mode", 0), False) and (_elapsed_time_s - _last_runtime_diag_log_s >= 1.0):
             _last_runtime_diag_log_s = _elapsed_time_s
             graph_diag = getattr(state, "graph_renderer_diag", {})
-            engine_meta = graph_diag.get("engine", {})
-            accel_meta = graph_diag.get("accel", {})
+            engine_meta = graph_diag.get("hist_engine", {})
+            accel_meta = graph_diag.get("hist_accel", {})
             _log(
-                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} now={3:.3f} window={4:.1f} power_samples={5} hist_engine={6} bsfc_trace={7} rpm={8} engine_on={9} cur_load={10} "
-                "engine_vis={11} engine_first={12} engine_last={13} engine_age={14} engine_pts={15} "
-                "accel_vis={16} accel_first={17} accel_last={18} accel_age={19} accel_pts={20} "
-                "scale={21:.1f} peak={22:.1f} target={23:.1f} "
-                "engine_p0={24} engine_prev={25} engine_last_pt={26} cur_P_engine={27} "
-                "accel_p0={28} accel_prev={29} accel_last_pt={30} cur_P_accel={31} graph_err={32} last_render={33}".format(
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine_len={3} hist_engine_last={4} cur_P_engine={5} "
+                "hist_accel_len={6} hist_accel_last={7} cur_P_accel={8} scale={9:.1f} points={10} last_hist={11} current={12} "
+                "graph_err={13} last_render={14}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
-                    float(getattr(state, "render_time_s", 0.0) or 0.0),
-                    float(state.strategy.get("power_graph_window_s", 10.0)),
-                    len(getattr(state, "power_trace_samples", [])),
                     len(state.hist_engine),
-                    len(state.bsfc_trace_rpm),
-                    int(state.observed_rpm),
-                    int(state.engine_on),
-                    state.current_load_display_ratio,
-                    engine_meta.get("visible_count"),
-                    engine_meta.get("first_visible_time"),
-                    engine_meta.get("last_visible_time"),
-                    engine_meta.get("last_visible_age"),
-                    engine_meta.get("point_count"),
-                    accel_meta.get("visible_count"),
-                    accel_meta.get("first_visible_time"),
-                    accel_meta.get("last_visible_time"),
-                    accel_meta.get("last_visible_age"),
-                    accel_meta.get("point_count"),
-                    float(getattr(state, "power_graph_scale_w", 0.0)),
-                    float(getattr(state, "power_graph_peak_power_w", 0.0) or 0.0),
-                    float(getattr(state, "power_graph_scale_raw_w", 0.0) or 0.0),
-                    engine_meta.get("points0"),
-                    engine_meta.get("points_prev"),
-                    engine_meta.get("points_last"),
+                    engine_meta.get("hist_last"),
                     state.current_P_engine,
-                    accel_meta.get("points0"),
-                    accel_meta.get("points_prev"),
-                    accel_meta.get("points_last"),
+                    len(state.hist_accel),
+                    accel_meta.get("hist_last"),
                     state.current_P_accel_term,
+                    float(getattr(state, "power_graph_scale_w", 0.0)),
+                    engine_meta.get("points_count"),
+                    engine_meta.get("hist_last"),
+                    engine_meta.get("current_point"),
                     engine_meta.get("error") or accel_meta.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
@@ -624,21 +572,6 @@ def _main_update(dt):
     state.hist_aero.append(P_aero)
     state.hist_accel.append(P_accel_t)
     state.hist_grade.append(P_grade_t)
-    state.hist_power_time.append(_elapsed_time_s)
-    power_trace_samples = getattr(state, "power_trace_samples", None)
-    if power_trace_samples is not None:
-        power_trace_samples.append({
-            "t": _elapsed_time_s,
-            "engine": demand_engine_power_w,
-            "roll": P_roll,
-            "aero": P_aero,
-            "accel": P_accel_t,
-            "grade": P_grade_t,
-        })
-        try:
-            power_trace_samples.trim(_elapsed_time_s)
-        except Exception:
-            pass
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
