@@ -62,15 +62,6 @@ def layout(window_size):
     }
 
 
-def _bool_cfg(value, default=False):
-    try:
-        return bool(int(value))
-    except Exception:
-        if isinstance(value, str):
-            return value.strip().lower() in ("1", "true", "yes", "on")
-    return default
-
-
 def create(window_id):
     labels = {}
     geo = layout(WINDOW_SIZE)
@@ -149,45 +140,37 @@ def update(labels, state):
     else:
         set_color(labels["val_estore"], (1.0, 0.45, 0.45, 1.0))
 
-    debug_enabled = _bool_cfg(state.strategy.get("debug_mode", 0), False)
-    overlay_enabled = _bool_cfg(state.strategy.get("power_graph_debug_overlay", 0), False)
-    show_diag = debug_enabled or overlay_enabled
     graph_diag = getattr(state, "graph_renderer_diag", {})
     engine_diag = graph_diag.get("hist_engine", {})
     accel_diag = graph_diag.get("hist_accel", {})
-    if show_diag:
-        set_text(labels["diag_rev"], "GREV: {0}".format(graph_renderer.GRAPH_RENDERER_REV))
-        set_text(
-            labels["diag_hist"],
-            "epoch={0} histE={1} last={2} cur={3} pts={4} err={5} | histA={6} last={7} cur={8} pts={9} err={10}".format(
-                getattr(state, "power_history_epoch", 0),
-                len(state.hist_engine),
-                state.hist_engine.to_list()[-1] if len(state.hist_engine) else "",
-                state.current_P_engine,
-                engine_diag.get("points_count", ""),
-                engine_diag.get("error", ""),
-                len(state.hist_accel),
-                state.hist_accel.to_list()[-1] if len(state.hist_accel) else "",
-                state.current_P_accel_term,
-                accel_diag.get("points_count", ""),
-                accel_diag.get("error", ""),
-            ),
-        )
-        set_text(
-            labels["diag_state"],
-            "lastH={0} curP={1} err={2} render={3} append_t={4} histE={5}/{6} histA={7}/{8}".format(
-                engine_diag.get("last_history_point", ""),
-                engine_diag.get("current_point", ""),
-                engine_diag.get("error", ""),
-                getattr(state, "last_render_error", ""),
-                getattr(state, "power_hist_debug", {}).get("append_time", ""),
-                getattr(state, "power_hist_debug", {}).get("hist_engine_len", ""),
-                getattr(state, "power_hist_debug", {}).get("hist_engine_last", ""),
-                getattr(state, "power_hist_debug", {}).get("hist_accel_len", ""),
-                getattr(state, "power_hist_debug", {}).get("hist_accel_last", ""),
-            ),
-        )
-    else:
-        set_text(labels["diag_rev"], "")
-        set_text(labels["diag_hist"], "")
-        set_text(labels["diag_state"], "")
+    set_text(labels["diag_rev"], "GREV: {0}".format(graph_renderer.GRAPH_RENDERER_REV))
+    set_text(
+        labels["diag_hist"],
+        "epoch={0} histE={1} last={2} cur={3} pts={4} err={5} | histA={6} last={7} cur={8} pts={9} err={10}".format(
+            getattr(state, "power_history_epoch", 0),
+            len(state.hist_engine),
+            state.hist_engine.to_list()[-1] if len(state.hist_engine) else "",
+            state.current_P_engine,
+            engine_diag.get("points_count", ""),
+            engine_diag.get("error", ""),
+            len(state.hist_accel),
+            state.hist_accel.to_list()[-1] if len(state.hist_accel) else "",
+            state.current_P_accel_term,
+            accel_diag.get("points_count", ""),
+            accel_diag.get("error", ""),
+        ),
+    )
+    set_text(
+        labels["diag_state"],
+        "lastH={0} curP={1} err={2} render={3} append_t={4} histE={5}/{6} histA={7}/{8}".format(
+            engine_diag.get("last_history_point", ""),
+            engine_diag.get("current_point", ""),
+            engine_diag.get("error", ""),
+            getattr(state, "last_render_error", ""),
+            getattr(state, "power_hist_debug", {}).get("append_time", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_engine_len", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_engine_last", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_accel_len", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_accel_last", ""),
+        ),
+    )

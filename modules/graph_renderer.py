@@ -15,7 +15,7 @@ except (ImportError, AttributeError):
 
 
 Y_MAX = 2000.0
-GRAPH_RENDERER_REV = "power-graph-history-epoch-002"
+GRAPH_RENDERER_REV = "power-graph-segments-003"
 SERIES = [
     ("hist_engine", "current_P_engine", 1.0, 1.0, 1.0),
     ("hist_roll", "current_P_roll", 0.3, 1.0, 0.3),
@@ -101,14 +101,7 @@ def _draw_series(state, x, y, w, h, scale):
     for attr, current_attr, r, g, b in SERIES:
         buf = getattr(state, attr, None)
         values = buf.to_list() if buf is not None else []
-        points = []
-        valid_values = []
-        for value in values:
-            if not _valid_power_value(value):
-                continue
-            valid_values.append(float(value))
-
-        count = len(valid_values)
+        count = len(values)
         capacity = max(int(getattr(buf, "_maxlen", max(count, 1))), 1)
         current_x = _current_x(x, w)
         live_gap = min(max(8.0, w * 0.02), 12.0)
@@ -117,10 +110,28 @@ def _draw_series(state, x, y, w, h, scale):
         dx = history_width / max(capacity - 1, 1)
         start_x = history_right_x - dx * max(count - 1, 0)
 
-        for idx, value in enumerate(valid_values):
+        segments = []
+        prev = None
+        last_valid_point = None
+        first_valid_value = None
+        last_valid_value = None
+        valid_count = 0
+        for idx, value in enumerate(values):
+            if not _valid_power_value(value):
+                prev = None
+                continue
+            value = float(value)
             px = start_x + dx * idx
             py = _power_to_clamped_py(value, y, h, scale)
-            points.append((px, py))
+            cur = (px, py)
+            if first_valid_value is None:
+                first_valid_value = value
+            last_valid_value = value
+            last_valid_point = cur
+            valid_count += 1
+            if prev is not None:
+                segments.append((prev, cur, idx))
+            prev = cur
 
         current_value = _to_float_or_none(getattr(state, current_attr, None))
         current_point = None
@@ -128,19 +139,33 @@ def _draw_series(state, x, y, w, h, scale):
             current_point = (current_x, _power_to_clamped_py(current_value, y, h, scale))
 
         error = ""
-        if points:
+        if segments:
             try:
-                ac.glColor4f(r, g, b, 0.9)
-                ac.glBegin(_GL_LINES)
-                for idx in range(1, len(points)):
-                    ac.glVertex2f(points[idx - 1][0], points[idx - 1][1])
-                    ac.glVertex2f(points[idx][0], points[idx][1])
-                if current_point is not None:
-                    ac.glVertex2f(points[-1][0], points[-1][1])
-                    ac.glVertex2f(current_point[0], current_point[1])
-                ac.glEnd()
+                # AC Python OpenGL can show stale updates with long GL_LINES batches.
+                # Match the BSFC renderer and submit each segment separately.
+                total = float(max(count - 1, 1))
+                for p0, p1, idx in segments:
+                    age = float(idx) / total
+                    alpha = 0.20 + age * 0.70
+                    ac.glColor4f(r, g, b, alpha)
+                    ac.glBegin(_GL_LINES)
+                    ac.glVertex2f(p0[0], p0[1])
+                    ac.glVertex2f(p1[0], p1[1])
+                    ac.glEnd()
             except Exception as exc:
                 error = "line failed: {0}".format(exc)
+                if not first_error:
+                    first_error = error
+
+        if last_valid_point is not None and current_point is not None:
+            try:
+                ac.glColor4f(r, g, b, 0.96)
+                ac.glBegin(_GL_LINES)
+                ac.glVertex2f(last_valid_point[0], last_valid_point[1])
+                ac.glVertex2f(current_point[0], current_point[1])
+                ac.glEnd()
+            except Exception as exc:
+                error = error or "current link failed: {0}".format(exc)
                 if not first_error:
                     first_error = error
 
@@ -160,12 +185,12 @@ def _draw_series(state, x, y, w, h, scale):
 
         diag[attr] = {
             "raw_hist_len": len(values),
-            "valid_hist_len": count,
-            "first_value": valid_values[0] if valid_values else None,
-            "last_value": valid_values[-1] if valid_values else None,
+            "valid_hist_len": valid_count,
+            "first_value": first_valid_value,
+            "last_value": last_valid_value,
             "current_value": current_value,
-            "first_point": points[0] if points else None,
-            "last_history_point": points[-1] if points else None,
+            "first_point": segments[0][0] if segments else last_valid_point,
+            "last_history_point": last_valid_point,
             "current_point": current_point,
             "history_capacity": capacity,
             "history_start_x": start_x,
@@ -173,7 +198,8 @@ def _draw_series(state, x, y, w, h, scale):
             "history_width": history_width,
             "graph_rect": (x, y, w, h),
             "scale": scale,
-            "points_count": len(points) + (1 if current_point is not None else 0),
+            "points_count": valid_count + (1 if current_point is not None else 0),
+            "segments_count": len(segments),
             "error": error,
         }
 
