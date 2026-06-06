@@ -2,6 +2,7 @@
 # GL renderer for the 10-second power graph.
 
 try:
+    import math
     import ac
     import acsys
     _GL_LINE_STRIP = acsys.GL.LineStrip
@@ -81,7 +82,6 @@ def _draw_series(state, x, y, w, h, scale):
             continue
 
         values = buf.to_list()
-        count = len(values)
         current_value = getattr(state, current_attr, None)
 
         try:
@@ -115,13 +115,27 @@ def _draw_series(state, x, y, w, h, scale):
             continue
 
         dot_px, dot_py = points[-1]
-        ac.glColor4f(r, g, b, 0.96)
-        ac.glBegin(_GL_QUADS)
-        ac.glVertex2f(dot_px - 2.2, dot_py - 2.2)
-        ac.glVertex2f(dot_px + 2.2, dot_py - 2.2)
-        ac.glVertex2f(dot_px + 2.2, dot_py + 2.2)
-        ac.glVertex2f(dot_px - 2.2, dot_py + 2.2)
-        ac.glEnd()
+        try:
+            ac.glColor4f(r, g, b, 0.96)
+            ac.glBegin(_GL_QUADS)
+            ac.glVertex2f(dot_px - 2.2, dot_py - 2.2)
+            ac.glVertex2f(dot_px + 2.2, dot_py - 2.2)
+            ac.glVertex2f(dot_px + 2.2, dot_py + 2.2)
+            ac.glVertex2f(dot_px - 2.2, dot_py + 2.2)
+            ac.glEnd()
+        except Exception as exc:
+            _record_series_diag(
+                state,
+                attr,
+                points[0][0],
+                points[0][1],
+                points[-1][0],
+                points[-1][1],
+                dot_px,
+                dot_py,
+                "dot failed: {0}".format(exc),
+            )
+            continue
 
         _record_series_diag(
             state,
@@ -140,7 +154,7 @@ def _build_series_points(values, current_value, x, y, w, h, scale):
     history = []
     for value in values:
         try:
-            if not _valid_point(value, 0.0):
+            if not _valid_power_value(value):
                 continue
             history.append(float(value))
         except Exception:
@@ -162,7 +176,7 @@ def _build_series_points(values, current_value, x, y, w, h, scale):
             points.append((px, py))
 
     current_value = _to_float_or_none(current_value)
-    if current_value is not None and _valid_point(current_value, 0.0):
+    if current_value is not None and _valid_power_value(current_value):
         current_px = x + w
         current_py = _power_to_clamped_py(current_value, y, h, scale)
         if not points:
@@ -186,6 +200,16 @@ def _power_to_py(power_w, y, height, scale):
 def _power_to_clamped_py(power_w, y, height, scale):
     py = _power_to_py(power_w, y, height, scale)
     return max(y, min(y + height, py))
+
+
+def _valid_power_value(value):
+    try:
+        value = float(value)
+    except Exception:
+        return False
+    if math.isnan(value) or math.isinf(value):
+        return False
+    return True
 
 
 def _to_float_or_none(value):
