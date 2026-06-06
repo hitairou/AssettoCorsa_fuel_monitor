@@ -29,17 +29,20 @@ _font_index = None
 _shadow_font_index = None
 _debug_log_path = os.path.join(tempfile.gettempdir(), "ecoran_bsfc_render_debug.txt")
 _debug_logged_draw = False
+_debug_logged_trace = False
 
 
 def init(bsfc_interp):
     global _rpm_min, _rpm_max, _load_min, _load_max, _bg_cells, _cell_labels
     global _font_index, _shadow_font_index, _debug_logged_draw
+    global _debug_logged_trace
 
     _bg_cells = []
     _cell_labels = []
     _font_index = None
     _shadow_font_index = None
     _debug_logged_draw = False
+    _debug_logged_trace = False
     rpm_axis = getattr(bsfc_interp, "rpm_axis", [])
     load_axis = getattr(bsfc_interp, "load_axis", [])
 
@@ -171,6 +174,19 @@ def _draw_trace(state, rect):
     count = min(len(trace_rpm), len(trace_load))
     if count < 2:
         return
+
+    global _debug_logged_trace
+    if not _debug_logged_trace:
+        _debug_logged_trace = True
+        _debug_log(
+            "trace draw count={0} first=({1},{2}) last=({3},{4})".format(
+                count,
+                trace_rpm[0],
+                trace_load[0],
+                trace_rpm[-1],
+                trace_load[-1],
+            )
+        )
 
     ac.glColor4f(1.0, 1.0, 0.3, 0.7)
     drawing = False
