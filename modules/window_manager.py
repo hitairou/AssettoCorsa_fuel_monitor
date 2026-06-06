@@ -15,21 +15,11 @@ except ImportError:
 
     ac = _AcStub()
 
-from modules.gate_model import create_gate
-from modules.gate_storage import load_gates, save_gates
 from modules import bsfc_renderer, gauge_renderer, graph_renderer
 from modules import panel_bsfc, panel_debug, panel_lap, panel_main, panel_power
 from modules.panel_common import safe_call
-from modules.ui_presets import set_window_visible, toggle_window, visibility_map
+from modules.ui_presets import cycle_preset, set_window_visible, toggle_window, visibility_map
 from modules.ui_state import WINDOW_ORDER, WINDOW_SPECS, ensure_defaults, load_saved_state, save_state
-from modules.record_state_machine import (
-    arm_semi_auto,
-    cancel_run,
-    reset_run,
-    set_mode,
-    start_manual,
-    stop_manual,
-)
 
 
 PANELS = {
@@ -44,9 +34,7 @@ _state_ref = None
 _window_by_app_id = {}
 _ui_log_file = os.path.join(os.environ.get("TEMP", "."), "ecoran_fuel_monitor_debug.txt")
 _last_render_error = {
-    "main": None,
     "power": None,
-    "lap": None,
     "bsfc": None,
 }
 
@@ -70,34 +58,12 @@ def create_windows(state):
 
         if key == "main":
             labels = panel_main.create(app_id, {
+                "preset": _on_preset_click,
+                "arm": _on_arm_click,
                 "power": _on_power_click,
                 "lap": _on_lap_click,
                 "bsfc": _on_bsfc_click,
                 "debug": _on_debug_click,
-            })
-        elif key == "debug":
-            labels = panel_debug.create(app_id, {
-                "mode_manual": _on_gate_mode_manual,
-                "mode_semi": _on_gate_mode_semi,
-                "start": _on_gate_start,
-                "stop": _on_gate_stop,
-                "arm": _on_gate_arm,
-                "cancel": _on_gate_cancel,
-                "reset": _on_gate_reset,
-                "reset_gates": _on_gate_reset_all,
-                "legacy_arm": _on_legacy_arm,
-                "set_start": _on_gate_set_start,
-                "set_lap": _on_gate_set_lap,
-                "set_finish": _on_gate_set_finish,
-                "sel_start": _on_gate_select_start,
-                "sel_lap": _on_gate_select_lap,
-                "sel_finish": _on_gate_select_finish,
-                "width_dec": _on_gate_width_dec,
-                "width_inc": _on_gate_width_inc,
-                "clear_selected": _on_gate_clear_selected,
-                "save": _on_gate_save,
-                "load": _on_gate_load,
-                "toggle_info": _on_gate_toggle_info,
             })
         else:
             labels = PANELS[key].create(app_id)
@@ -113,12 +79,8 @@ def create_windows(state):
         safe_call(ac.addOnAppActivatedListener, app_id, _on_app_activated)
         safe_call(ac.addOnAppDismissedListener, app_id, _on_app_dismissed)
 
-        if spec.get("render") == "main":
-            safe_call(ac.addRenderCallback, app_id, _render_main)
-        elif spec.get("render") == "power":
+        if spec.get("render") == "power":
             safe_call(ac.addRenderCallback, app_id, _render_power)
-        elif spec.get("render") == "lap":
-            safe_call(ac.addRenderCallback, app_id, _render_lap)
         elif spec.get("render") == "bsfc":
             safe_call(ac.addRenderCallback, app_id, _render_bsfc)
 
@@ -160,14 +122,9 @@ def shutdown_windows(state):
 def _configure_window(app_id, key, spec, state):
     safe_call(ac.setTitle, app_id, spec["title"])
     safe_call(ac.setIconPosition, app_id, 0, 0)
-    if key == "main":
-        safe_call(ac.drawBorder, app_id, 0)
-        safe_call(ac.setBackgroundColor, app_id, 0.0, 0.0, 0.0)
-        safe_call(ac.setBackgroundOpacity, app_id, 0.0)
-    else:
-        safe_call(ac.drawBorder, app_id, 1)
-        safe_call(ac.setBackgroundColor, app_id, 0.12, 0.12, 0.12)
-        safe_call(ac.setBackgroundOpacity, app_id, 0.72)
+    safe_call(ac.drawBorder, app_id, 1)
+    safe_call(ac.setBackgroundColor, app_id, 0.12, 0.12, 0.12)
+    safe_call(ac.setBackgroundOpacity, app_id, 0.72)
 
     size = tuple(state.ui_window_sizes.get(key, spec["size"]))
     position = tuple(state.ui_window_positions.get(key, spec["position"]))
@@ -175,9 +132,26 @@ def _configure_window(app_id, key, spec, state):
     safe_call(ac.setSize, app_id, size[0], size[1])
     safe_call(ac.setPosition, app_id, position[0], position[1])
 
+
+def _on_preset_click(*args):
+    if _state_ref is not None:
+        cycle_preset(_state_ref)
+
+
 def _on_power_click(*args):
     if _state_ref is not None:
         toggle_window(_state_ref, "power")
+
+
+def _on_arm_click(*args):
+    if _state_ref is None:
+        return
+    if str(_state_ref.measurement_start_mode) != "manual_arm_then_cross_sf":
+        return
+    if _state_ref.measurement_active:
+        return
+    _state_ref.measurement_armed = not bool(_state_ref.measurement_armed)
+
 
 def _on_lap_click(*args):
     if _state_ref is not None:
@@ -249,7 +223,7 @@ def _render_power(*args):
         size = _state_ref.ui_window_sizes.get("power", WINDOW_SPECS["power"]["size"])
         geo = panel_power.layout(size)
         graph_renderer.draw(_state_ref, geo["graph_rect"])
-        gauge_renderer.draw(_state_ref, geo["bar_rect"], geo["residual_rect"])
+        gauge_renderer.draw(_state_ref, geo["bar_rect"], geo["estore_rect"])
     except Exception:
         _log_render_exception("power")
 
@@ -263,26 +237,6 @@ def _render_bsfc(*args):
         bsfc_renderer.draw(_state_ref, geo["map_rect"])
     except Exception:
         _log_render_exception("bsfc")
-
-
-def _render_main(*args):
-    if _state_ref is None:
-        return
-    try:
-        size = _state_ref.ui_window_sizes.get("main", WINDOW_SPECS["main"]["size"])
-        panel_main.render(_state_ref, size)
-    except Exception:
-        _log_render_exception("main")
-
-
-def _render_lap(*args):
-    if _state_ref is None:
-        return
-    try:
-        size = _state_ref.ui_window_sizes.get("lap", WINDOW_SPECS["lap"]["size"])
-        panel_lap.render(_state_ref, size)
-    except Exception:
-        _log_render_exception("lap")
 
 
 def _log_render_exception(key):
@@ -301,207 +255,3 @@ def _log_exception(context):
             handle.write("\n")
     except Exception:
         pass
-
-
-def _gate_status(text):
-    if _state_ref is not None:
-        _state_ref.gate_last_status = str(text)
-
-
-def _save_gate_state(activate_record_control=True):
-    if _state_ref is None or not _state_ref.track_key:
-        return False
-    ok, reason, path = save_gates(_state_ref.track_key, _state_ref.record_mode, _state_ref.gates)
-    _state_ref.gate_storage_path = path
-    if ok:
-        _state_ref.record_control_enabled = bool(activate_record_control)
-        _gate_status("Saved gates for {0}".format(_state_ref.track_key))
-    else:
-        _gate_status("Gate save failed: {0}".format(reason))
-    return ok
-
-
-def _load_gate_state():
-    if _state_ref is None or not _state_ref.track_key:
-        return False
-    ok, payload, reason, path = load_gates(_state_ref.track_key)
-    _state_ref.gate_storage_path = path
-    if ok:
-        _state_ref.gates["start"] = payload["gates"].get("start")
-        _state_ref.gates["lap"] = payload["gates"].get("lap")
-        _state_ref.gates["finish"] = payload["gates"].get("finish")
-        _state_ref.record_mode = str(payload.get("record_mode", "manual"))
-        _state_ref.record_control_enabled = any(
-            _state_ref.gates.get(kind) for kind in ("start", "lap", "finish")
-        )
-        _gate_status("Loaded gates for {0}".format(_state_ref.track_key))
-    else:
-        _gate_status("Gate load warning: {0}".format(reason))
-    return ok
-
-
-def _set_gate(kind):
-    if _state_ref is None:
-        return
-    if _state_ref.record_state == "running":
-        _gate_status("Gate edit disabled while running")
-        return
-    _state_ref.selected_gate_kind = kind
-    _state_ref.gates[kind] = create_gate(
-        kind,
-        _state_ref.raw_car_coordinates,
-        _state_ref.last_forward_world,
-        half_width_m=4.0,
-    )
-    _state_ref.record_control_enabled = True
-    _save_gate_state()
-
-
-def _select_gate(kind):
-    if _state_ref is None:
-        return
-    _state_ref.selected_gate_kind = kind
-    _gate_status("Selected {0} gate".format(kind))
-
-
-def _adjust_selected_gate(delta):
-    if _state_ref is None:
-        return
-    kind = _state_ref.selected_gate_kind
-    gate = _state_ref.gates.get(kind)
-    if not gate:
-        _gate_status("No selected gate")
-        return
-    width = max(1.0, min(20.0, float(gate.get("half_width_m", 4.0)) + float(delta)))
-    gate["half_width_m"] = width
-    _save_gate_state()
-
-
-def _on_gate_mode_manual(*args):
-    if _state_ref is None:
-        return
-    _gate_status(set_mode(_state_ref, "manual")[1])
-
-
-def _on_gate_mode_semi(*args):
-    if _state_ref is None:
-        return
-    _gate_status(set_mode(_state_ref, "semi_auto")[1])
-
-
-def _on_gate_start(*args):
-    if _state_ref is None:
-        return
-    ok, message = start_manual(_state_ref)
-    _gate_status(message)
-    if ok:
-        _state_ref.pending_record_command = "start_manual"
-
-
-def _on_gate_stop(*args):
-    if _state_ref is None:
-        return
-    ok, message = stop_manual(_state_ref)
-    _gate_status(message)
-    if ok:
-        _state_ref.pending_record_command = "stop_manual"
-
-
-def _on_gate_arm(*args):
-    if _state_ref is None:
-        return
-    ok, message = arm_semi_auto(_state_ref)
-    _gate_status(message)
-
-
-def _on_gate_cancel(*args):
-    if _state_ref is None:
-        return
-    ok, message = cancel_run(_state_ref)
-    _gate_status(message)
-    if ok:
-        _state_ref.pending_record_command = "cancel_run"
-
-
-def _on_gate_reset(*args):
-    if _state_ref is None:
-        return
-    ok, message = reset_run(_state_ref)
-    _gate_status(message)
-    if ok:
-        _state_ref.pending_record_command = "reset_run"
-
-
-def _on_gate_reset_all(*args):
-    if _state_ref is None:
-        return
-    _state_ref.gates["start"] = None
-    _state_ref.gates["lap"] = None
-    _state_ref.gates["finish"] = None
-    _state_ref.selected_gate_kind = "lap"
-    _state_ref.record_mode = "manual"
-    _state_ref.record_control_enabled = False
-    _save_gate_state(activate_record_control=False)
-
-
-def _on_gate_set_start(*args):
-    _set_gate("start")
-
-
-def _on_gate_set_lap(*args):
-    _set_gate("lap")
-
-
-def _on_gate_set_finish(*args):
-    _set_gate("finish")
-
-
-def _on_gate_select_start(*args):
-    _select_gate("start")
-
-
-def _on_gate_select_lap(*args):
-    _select_gate("lap")
-
-
-def _on_gate_select_finish(*args):
-    _select_gate("finish")
-
-
-def _on_gate_width_dec(*args):
-    _adjust_selected_gate(-0.5)
-
-
-def _on_gate_width_inc(*args):
-    _adjust_selected_gate(0.5)
-
-
-def _on_gate_clear_selected(*args):
-    if _state_ref is None:
-        return
-    kind = _state_ref.selected_gate_kind
-    _state_ref.gates[kind] = None
-    _save_gate_state()
-
-
-def _on_gate_save(*args):
-    _save_gate_state()
-
-
-def _on_gate_load(*args):
-    _load_gate_state()
-
-
-def _on_gate_toggle_info(*args):
-    if _state_ref is None:
-        return
-    _state_ref.gate_info_visible = not bool(_state_ref.gate_info_visible)
-
-
-def _on_legacy_arm(*args):
-    if _state_ref is None:
-        return
-    if str(_state_ref.measurement_start_mode) != "manual_arm_then_cross_sf":
-        return
-    _state_ref.measurement_armed = not bool(_state_ref.measurement_armed)
-    _gate_status("Legacy ARM {0}".format("ON" if _state_ref.measurement_armed else "OFF"))

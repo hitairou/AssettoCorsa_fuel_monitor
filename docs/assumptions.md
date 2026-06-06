@@ -1,84 +1,94 @@
 # Assumptions and Modeling Notes - ecoran_fuel_monitor
 
-## 1. Demand Values Are Model Outputs
+## 1. Demand Load
 
-`Demand Load`, `Demand BSFC`, `Demand Fuel Flow`, and the Power window's
-component breakdown are reverse-calculated model values, not ECU measurements.
+`Demand Load [%]` is the required load ratio inferred from current vehicle
+motion and gearing.
 
-## 2. Main HUD Is Intentionally Sparse
+It is not an ECU-reported load value.
 
-Main is for driving-time recognition, not full telemetry inspection.
-Detailed values were moved into Debug on purpose.
+## 2. Engine Demand / Wheel Demand
 
-## 3. Power Residual Is Not Physical Stored Energy
+`Engine Demand [W]` and `Wheel Demand [W]` are reverse-calculated demand powers.
+They describe the power required by the current motion state under the model.
 
-`Residual Int.` / `Net Energy Balance` is the integral of the model residual:
+They are not measured engine output.
 
-```text
-P_engine_demand - P_roll - P_aero - P_accel - P_grade
-```
+## 3. Current BSFC Display
 
-It is not kinetic energy, fuel energy, or a battery state.
+`Current BSFC` is only shown when the engine operating point is meaningful:
 
-## 4. BSFC Current Point Visibility
+- engine considered ON
+- display gear engaged
+- RPM above display threshold
 
-Current BSFC / load are only shown when the engine operating point is
-meaningful. Engine OFF dims the BSFC view and hides the current point if the
-operating point is invalid.
+When that condition is false, the UI hides current BSFC and load because the
+remaining model outputs are demand-only values.
 
-## 5. Gate Detection Uses XZ Plane Only
+## 4. Demand BSFC / Fuel Flow
 
-Gate crossing is evaluated on the XZ plane.
+`demand_bsfc_g_per_kwh` and `demand_fuel_flow_ml_s` may still be computed while
+the engine is OFF. They are retained for debugging and audit purposes but are
+not shown as live engine operating values in the Main or BSFC windows.
 
-- `center_world` keeps Y for storage/reference
-- pass/fail ignores height
-- `forward_world` and `tangent_world` are normalized in XZ
+## 5. Dynamic 8-Lap Estimate
 
-## 6. Directional Gate Meaning
+The dynamic estimate uses the current provisional lap only when both conditions
+are met:
 
-Directional gates use:
+- `current_lap_progress >= min_progress_for_dynamic_estimate`
+- `current_lap_time >= min_time_for_dynamic_estimate`
 
-```text
-s0 = dot(p0 - c, n)
-s1 = dot(p1 - c, n)
-```
+If those conditions are not met, the display falls back to completed laps only.
 
-and trigger only when:
+## 6. Initial Partial Lap Exclusion
 
-```text
-s0 < 0 and s1 >= 0
-```
+When `ignore_initial_partial_lap = 1`, the lap tracker does not store the
+pre-measurement partial lap as a completed row. This avoids contaminating lap
+history with pit-exit or mid-track spawn conditions.
 
-So the gate remembers the intended forward crossing direction.
+## 7. Net Energy Balance
 
-## 7. Gate Forward Vector Source
+`Net Energy Balance [kJ]` is the integral of the power-balance residual.
 
-Gate creation prefers the car heading from AC shared memory and aligns it with
-the current horizontal velocity when possible. This keeps stopped-car gate
-creation usable while still following the actual travel direction in motion.
+It is not:
+- kinetic energy
+- fuel energy
+- a stored physical energy state
 
-## 8. False-Trigger Guards
+It is a model residual intended for analysis.
 
-Each gate can reject a pass due to:
+## 8. Gear Mapping
 
-- cooldown
-- minimum speed
-- being outside half-width
-- wrong record state
-- finish guard (minimum run time / completed laps)
+Assetto Corsa raw gear values may differ from the stock HUD display by a fixed
+offset on a given car. The app therefore separates:
 
-These rejection reasons are surfaced in Debug.
+- `raw_gear`
+- `display_gear`
 
-## 9. Legacy Measurement Compatibility
+and applies `gear_display_offset` in the display path.
 
-Legacy SF-based measurement still exists when gate-based recording is not
-active. The Debug window exposes a small legacy ARM control for
-`manual_arm_then_cross_sf` so old configurations still work.
+## 9. Fuel Density
 
-## 10. Runtime Constraints
+Fuel-flow conversion uses `fuel_density_g_per_ml` from `vehicle.ini`. The app
+falls back to `0.778` only when that config value is missing.
+
+## 10. Grade Estimation
+
+Dynamic grade estimation still depends on telemetry consistency:
+
+- `distanceTraveled`
+- `carCoordinates`
+- `pitch`
+- chosen `vertical_axis_index`
+
+The Debug window exposes the raw values so the estimator can be audited on the
+target car and track.
+
+## 11. Python Runtime Constraints
 
 The app still targets Assetto Corsa's embedded Python runtime:
 
 - no external packages
+- no type annotations
 - standard library only
-- multi-window AC UI callbacks preserved

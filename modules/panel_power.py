@@ -1,55 +1,63 @@
 # modules/panel_power.py
 # Power analysis window.
 
-from modules.display_format import fmt_signed_unit, fmt_unit
-from modules.gauge_renderer import BREAKDOWN_SPECS, build_power_breakdown
-from modules.panel_common import add_label, move, set_color, set_text
+from modules.display_format import fmt_kj, fmt_w
+from modules.panel_common import add_label, set_color, set_text
 
 
-WINDOW_SIZE = (520, 360)
+WINDOW_SIZE = (420, 320)
+PADDING = 8
+GRAPH_H = 112
+BAR_LABEL_W = 96
+BAR_VALUE_W = 54
+BAR_GAP = 6
+ROW_H = 14
+ROW_GAP = 2
 TITLE_SAFE_TOP = 28
-PADDING = 10
-AXIS_W = 50
-ROW_H = 15
+AXIS_W = 30
+AXIS_H = 16
+
+LEGEND = [
+    ("Engine Demand", (1.0, 1.0, 1.0, 1.0)),
+    ("Roll", (0.3, 1.0, 0.3, 1.0)),
+    ("Aero", (0.3, 0.8, 1.0, 1.0)),
+    ("Accel", (1.0, 0.6, 0.2, 1.0)),
+    ("Grade", (1.0, 0.4, 0.9, 1.0)),
+]
+
+POWER_ROWS = [
+    ("wheel", "Wheel Demand"),
+    ("accel_pos", "Accel +"),
+    ("grade_pos", "Grade +"),
+    ("roll", "Roll"),
+    ("aero", "Aero"),
+    ("accel_neg", "Accel -"),
+    ("grade_neg", "Grade -"),
+]
 
 
 def layout(window_size):
-    width, height = window_size
+    width, _height = window_size
     graph_x = PADDING + AXIS_W
-    graph_y = TITLE_SAFE_TOP + 8
-    graph_w = max(width - graph_x - PADDING, 180)
-    graph_h = 132
-
-    tick_y = graph_y + graph_h + 2
-    list_y = tick_y + 16
-    label_x = PADDING
-    value_x = PADDING + 110
-    pct_x = PADDING + 190
-    bar_y = list_y + len(BREAKDOWN_SPECS) * ROW_H + 6
-    bar_rect = (PADDING + 8, bar_y, width - PADDING * 2 - 16, 28)
-    residual_y = bar_y + 36
-    residual_rect = (PADDING + 8, residual_y + 16, width - PADDING * 2 - 16, max(height - residual_y - 24, 44))
-
+    graph_y = TITLE_SAFE_TOP + 4
+    graph_w = width - graph_x - PADDING
+    bar_graph_x = PADDING + BAR_LABEL_W + BAR_GAP
+    bar_graph_w = width - bar_graph_x - PADDING - BAR_VALUE_W - BAR_GAP
+    legend_y = graph_y + GRAPH_H + AXIS_H + 8
+    bar_y = legend_y + 18
+    estore_y = bar_y + (7 * ROW_H + 6 * ROW_GAP + 10) + 12
     return {
-        "graph_rect": (graph_x, graph_y, graph_w, graph_h),
-        "bar_rect": bar_rect,
-        "residual_rect": residual_rect,
-        "axis_top": (PADDING, graph_y),
-        "axis_mid": (PADDING, graph_y + graph_h * 0.5 - 7),
-        "axis_bot": (PADDING, graph_y + graph_h - 14),
-        "time_ticks": [
-            ("-20s", graph_x - 2),
-            ("-15s", graph_x + graph_w * 0.25 - 18),
-            ("-10s", graph_x + graph_w * 0.50 - 18),
-            ("-5s", graph_x + graph_w * 0.75 - 14),
-            ("0s", graph_x + graph_w - 18),
-        ],
-        "list_y": list_y,
-        "label_x": label_x,
-        "value_x": value_x,
-        "pct_x": pct_x,
-        "residual_label": (PADDING, residual_y),
-        "residual_value": (width - PADDING - 88, residual_y),
+        "graph_rect": (graph_x, graph_y, graph_w, GRAPH_H),
+        "bar_rect": (bar_graph_x, bar_y, bar_graph_w, 7 * ROW_H + 6 * ROW_GAP + 10),
+        "estore_rect": (bar_graph_x, estore_y, bar_graph_w, 22),
+        "graph_x": graph_x,
+        "graph_y": graph_y,
+        "graph_w": graph_w,
+        "bar_label_x": PADDING,
+        "bar_value_x": bar_graph_x + bar_graph_w + BAR_GAP,
+        "legend_y": legend_y,
+        "bar_y": bar_y,
+        "estore_y": estore_y,
     }
 
 
@@ -57,68 +65,66 @@ def create(window_id):
     labels = {}
     geo = layout(WINDOW_SIZE)
 
-    labels["axis_top"] = add_label(window_id, "+400 W", 0, 0, AXIS_W, 14, 9, "right")
-    labels["axis_mid"] = add_label(window_id, "0 W", 0, 0, AXIS_W, 14, 9, "right")
-    labels["axis_bot"] = add_label(window_id, "-400 W", 0, 0, AXIS_W, 14, 9, "right")
+    labels["axis_top"] = add_label(
+        window_id, "2000", PADDING, geo["graph_y"], AXIS_W - 2, 14, 9, "right"
+    )
+    labels["axis_zero"] = add_label(
+        window_id, "0", PADDING, geo["graph_y"] + GRAPH_H / 2 - 7, AXIS_W - 2, 14, 9, "right"
+    )
+    labels["axis_bottom"] = add_label(
+        window_id, "-2000", PADDING, geo["graph_y"] + GRAPH_H - 14, AXIS_W - 2, 14, 9, "right"
+    )
+    labels["axis_t_left"] = add_label(
+        window_id, "-10s", geo["graph_x"], geo["graph_y"] + GRAPH_H + 1, 40, 12, 9, "left"
+    )
+    labels["axis_t_right"] = add_label(
+        window_id, "0s", geo["graph_x"] + geo["graph_w"] - 20, geo["graph_y"] + GRAPH_H + 1, 20, 12, 9, "right"
+    )
 
-    labels["time_ticks"] = []
-    for text, _x in geo["time_ticks"]:
-        labels["time_ticks"].append(add_label(window_id, text, 0, 0, 34, 12, 9, "left"))
+    legend_step = 82
+    for idx, (text, color) in enumerate(LEGEND):
+        x = PADDING + idx * legend_step
+        labels["legend_" + str(idx)] = add_label(
+            window_id, text, x, geo["legend_y"], 78, 14, 10, "left", color
+        )
 
-    labels["rows"] = []
-    for _key, title, _side, _fn, color in BREAKDOWN_SPECS:
-        labels["rows"].append({
-            "name": add_label(window_id, title, 0, 0, 100, ROW_H, 10, "left", color),
-            "value": add_label(window_id, "0 W", 0, 0, 76, ROW_H, 10, "right"),
-            "pct": add_label(window_id, "0.0%", 0, 0, 56, ROW_H, 10, "right"),
-        })
+    for idx, (key, title) in enumerate(POWER_ROWS):
+        row_y = geo["bar_y"] + 5 + idx * (ROW_H + ROW_GAP)
+        labels["lbl_" + key] = add_label(
+            window_id, title, geo["bar_label_x"], row_y, BAR_LABEL_W, ROW_H, 10, "left"
+        )
+        labels["val_" + key] = add_label(
+            window_id, "0", geo["bar_value_x"], row_y, BAR_VALUE_W, ROW_H, 10, "right"
+        )
 
-    labels["residual_label"] = add_label(window_id, "Residual Int.", 0, 0, 120, 14, 10, "left")
-    labels["residual_value"] = add_label(window_id, "0.0 kJ", 0, 0, 88, 14, 10, "right")
-    _apply_layout(labels, WINDOW_SIZE)
+    labels["lbl_estore"] = add_label(
+        window_id, "Net Energy Balance [kJ]", PADDING, geo["estore_y"], 138, 14, 10, "left"
+    )
+    labels["val_estore"] = add_label(
+        window_id, "0", geo["bar_value_x"], geo["estore_y"], BAR_VALUE_W, 14, 10, "right"
+    )
     return labels
 
 
 def update(labels, state):
-    size = tuple(state.ui_window_sizes.get("power", WINDOW_SIZE))
-    _apply_layout(labels, size)
+    values = {
+        "wheel": state.demand_wheel_power_w,
+        "accel_pos": max(state.demand_accel_power_w, 0.0),
+        "grade_pos": max(state.demand_grade_power_w, 0.0),
+        "roll": state.demand_roll_power_w,
+        "aero": state.demand_aero_power_w,
+        "accel_neg": abs(min(state.demand_accel_power_w, 0.0)),
+        "grade_neg": abs(min(state.demand_grade_power_w, 0.0)),
+    }
 
-    scale = max(float(state.power_graph_scale_w), 300.0)
-    set_text(labels["axis_top"], fmt_signed_unit(scale, "W", digits=0))
-    set_text(labels["axis_mid"], "0 W")
-    set_text(labels["axis_bot"], fmt_signed_unit(-scale, "W", digits=0))
+    for key, value in values.items():
+        set_text(labels["val_" + key], fmt_w(value, 0))
 
-    breakdown = build_power_breakdown(state)
-    for idx, row in enumerate(breakdown):
-        ui = labels["rows"][idx]
-        set_text(ui["value"], fmt_unit(row["value_w"], "W", digits=0))
-        set_text(ui["pct"], "{0}%".format(fmt_unit(row["pct"], "", digits=1).replace(" ", "")))
-        set_color(ui["value"], row["color"])
-        set_color(ui["pct"], row["color"])
+    set_text(labels["axis_top"], fmt_w(state.power_graph_scale_w, 0))
+    set_text(labels["axis_bottom"], fmt_w(-state.power_graph_scale_w, 0))
+    set_text(labels["val_estore"], fmt_kj(state.net_energy_balance_j, 1))
 
-    set_text(labels["residual_value"], fmt_unit(state.net_energy_balance_j, "kJ", digits=1, scale=1000.0))
     if state.net_energy_balance_j >= 0.0:
-        set_color(labels["residual_value"], (0.42, 0.82, 1.0, 1.0))
+        set_color(labels["val_estore"], (0.35, 0.75, 1.0, 1.0))
     else:
-        set_color(labels["residual_value"], (0.96, 0.46, 0.40, 1.0))
-
-
-def _apply_layout(labels, size):
-    geo = layout(size)
-    move(labels["axis_top"], geo["axis_top"][0], int(geo["axis_top"][1]), AXIS_W, 14)
-    move(labels["axis_mid"], geo["axis_mid"][0], int(geo["axis_mid"][1]), AXIS_W, 14)
-    move(labels["axis_bot"], geo["axis_bot"][0], int(geo["axis_bot"][1]), AXIS_W, 14)
-
-    for idx, tick in enumerate(labels["time_ticks"]):
-        text, tick_x = geo["time_ticks"][idx]
-        set_text(tick, text)
-        move(tick, int(tick_x), int(layout(size)["graph_rect"][1] + layout(size)["graph_rect"][3] + 2), 34, 12)
-
-    for idx, row in enumerate(labels["rows"]):
-        y = geo["list_y"] + idx * ROW_H
-        move(row["name"], geo["label_x"], y, 100, ROW_H)
-        move(row["value"], geo["value_x"], y, 76, ROW_H)
-        move(row["pct"], geo["pct_x"], y, 56, ROW_H)
-
-    move(labels["residual_label"], geo["residual_label"][0], geo["residual_label"][1], 120, 14)
-    move(labels["residual_value"], geo["residual_value"][0], geo["residual_value"][1], 88, 14)
+        set_color(labels["val_estore"], (1.0, 0.45, 0.45, 1.0))

@@ -2,7 +2,13 @@
 
 ## Overview
 
-The app keeps the existing multi-window Assetto Corsa Python structure:
+`ecoran_fuel_monitor` no longer uses one oversized translucent app window with
+all sections painted into the same coordinate space. That older design made it
+too easy to overlap Summary, power graphics, lap data, and BSFC analysis, and
+it also blurred the difference between "always watch while driving" data and
+"open later for analysis" data.
+
+The app now uses multiple AC Python windows:
 
 - `Ecoran Main`
 - `Ecoran Power`
@@ -10,203 +16,266 @@ The app keeps the existing multi-window Assetto Corsa Python structure:
 - `Ecoran BSFC`
 - `Ecoran Debug`
 
-The windows are now split more aggressively by purpose:
+Each window owns one responsibility area. Every renderer draws in local
+window-space coordinates only. No section draws onto a shared giant gray
+background.
 
-- Main: three HUD values only
-- Power: 20-second trend + stacked contribution bar + residual integral
-- BSFC: compact operating-point learning screen
-- Lap: comparison table
-- Debug: audit view + gate editor / recorder controls
+## Data Meaning Categories
 
-## Runtime Data Flow
+All runtime values are organized into four meaning groups.
 
-The runtime loop is still:
+### Observed / Actual
 
-1. refresh shared memory
-2. read telemetry into `state`
-3. update smoothed / inferred demand values
-4. append histories
-5. update lap tracker and measurement session
-6. refresh window labels
-7. let render callbacks paint graph/table/HUD backgrounds
+Values read directly from shared memory or values that only make sense while
+the engine is actually running.
 
-The main entry remains [`ecoran_fuel_monitor.py`].
+Examples:
+- `observed_rpm`
+- `raw_gear`
+- `display_gear`
+- `observed_speed_kmh`
+- `observed_engine_on`
+- `observed_fuel`
 
-## Main Responsibilities
+### Demand / Inferred
 
-### Main HUD
+Values reverse-calculated from current motion, grade, acceleration, and gear.
+These are not ECU-reported outputs.
 
-Main intentionally dropped all detailed rows.
+Examples:
+- `demand_wheel_power_w`
+- `demand_engine_power_w`
+- `demand_load_ratio`
+- `demand_bsfc_g_per_kwh`
+- `demand_fuel_flow_ml_s`
 
-It now shows only:
+### Estimate / Projection
 
-- average fuel economy
-- pace delta
-- engine ON/OFF
-- four small corner buttons: `PWR`, `LAP`, `BSFC`, `DBG`
+Future-looking values derived from completed history and, optionally, the
+current provisional lap.
 
-Everything else that used to live in Main was moved to Debug.
+Examples:
+- `est_8lap_fuel_ml_completed_only`
+- `est_8lap_fuel_ml_dynamic`
+- `est_8lap_econ_km_per_l_completed_only`
+- `est_8lap_econ_km_per_l_dynamic`
+- `est_8lap_source`
 
-### Power Window
+### Aggregate / Cumulative
 
-Power uses three vertical layers:
+Measurement-session totals and averages.
 
-1. 20-second time-series graph
-2. one centered stacked bar for current contribution breakdown
-3. residual integral sparkline
+Examples:
+- `avg_fuel_econ_km_per_l`
+- `avg_speed_kmh`
+- `measurement_fuel_used_ml`
+- `lap_rows`
+- `laps_completed`
 
-`app_state._HIST_LEN` is now `200`, which keeps 20 seconds at the existing
-10 Hz update cadence.
+## Measurement Session
 
-Auto-scale is based on recent history rather than a hard 2000 W floor.
+The app now separates the AC session from the measurement session.
 
-### BSFC Window
+`measurement session` is the analysis zero-point used for:
 
-BSFC now combines:
+- `Avg Fuel Econ`
+- `Avg Speed`
+- `Fuel Used`
+- `Pace Delta`
+- `Remaining`
+- 8-lap estimates
+- lap table rows
 
-- one-line current summary
-- heatmap with cell values
-- 20-second fading trace
-- current operating point
-- candidate operating points for other forward gears
-
-Engine OFF dims the whole view without hiding the map.
-
-### Lap Window
-
-Lap is a compact comparison table with:
-
-- explicit column borders
-- a provisional row background
-- color grading across completed rows for best/worst values
-
-### Debug Window
-
-Debug is the long-form audit window.
-
-Sections:
-
-1. Session Summary
-2. Live Vehicle
-3. Demand / Model
-4. Estimate / Race
-5. Raw Source
-6. Gate Control
-
-## Measurement and Lap Tracking
-
-### Legacy Measurement
-
-Legacy start logic still exists:
+Supported start modes:
 
 - `session_start`
 - `first_cross_sf`
 - `manual_arm_then_cross_sf`
 
-If gate-based recording is not active, the old SF-based measurement flow is
-still used.
+Default is `first_cross_sf`.
 
-### Gate-Based Recording
+That means entering the session does not immediately start race analysis.
+Instead, the first start/finish crossing becomes measurement zero so that pit
+exit and pre-start motion do not contaminate averages or lap history.
 
-Gate-based recording adds:
+## Initial Partial Lap Handling
 
-- `record_mode = manual | semi_auto`
-- `record_state = idle | armed | running | finished`
+The lap table ignores the initial partial lap when
+`ignore_initial_partial_lap = 1`.
 
-Manual mode:
+Reason:
+- starting from pit or a random spawn point often means "Lap 1" is not a full
+  race lap
+- saving that partial lap as a completed row corrupts average lap fuel and
+  8-lap estimation
 
-- `START` begins measurement
-- `STOP` finishes measurement
-- lap count advances on lap-gate crossings only
+The tracker therefore waits for the first valid start/finish crossing before it
+begins storing completed-lap rows.
 
-Semi-auto mode:
+## Window Responsibilities
 
-- `ARM` enters `armed`
-- start gate crossing enters `running`
-- lap gate crossing completes a lap
-- finish gate crossing ends the run
+### Ecoran Main
 
-Gate-based control overrides legacy measurement start modes only when it is
-active.
+Purpose: always-visible monitoring while driving.
 
-### Lap Tracker Integration
+Blocks:
+- `Summary`
+- `Live / Current`
 
-`modules/lap_tracker.py` still owns session distance and lap-distance based
-progress. It now supports gate-based lap completion in addition to the legacy
-start/finish crossing path.
+Summary values:
+- `Avg Fuel Econ [km/L]`
+- `Avg Speed [km/h]`
+- `Remaining [mm:ss.s]`
+- `Pace Delta [s]`
+- `Fuel Used [mL]`
+- `Laps Completed / Total`
 
-This keeps:
+Live / Current values:
+- `RPM`
+- `Display Gear`
+- `Throttle [%]`
+- `Grade [%]`
+- `Engine`
+- `Demand Load [%]`
+- `Current BSFC [g/kWh]`
+- `Fuel Flow [mL/s]`
+- `8lap Fuel Est [mL]`
+- `8lap Econ Est [km/L]`
+- `Net Energy Balance [kJ]`
 
-- measurement distance
-- current lap distance
-- provisional 8-lap estimate inputs
+Engine-off display rule:
+- `Current BSFC` becomes `---`
+- `Fuel Flow` becomes `0.0000`
+- demand values may still exist internally and remain visible in Debug
 
-compatible with the existing logic.
+### Ecoran Power
 
-## Gate Model
+Purpose: demand-power and residual-balance analysis.
 
-Each gate is a line segment described by:
+Content:
+- 10-second demand-power graph
+- diverging bar chart
+- `Net Energy Balance [kJ]`
 
-- `center_world`
-- `forward_world`
-- `tangent_world`
-- `half_width_m`
-- `directional`
-- `cooldown_s`
-- `min_speed_kmh`
-- `enabled`
+Series meanings:
+- `Engine Demand [W]`
+- `Rolling Resistance [W]`
+- `Aero Drag [W]`
+- `Acceleration Term [W]`
+- `Grade Term [W]`
 
-Detection is performed on the XZ plane.
+Important:
+- `Engine Demand` and `Wheel Demand` are reverse-calculated demand values
+- they are not measured engine output values
+- zero line is the sign split for positive and resistive terms
 
-Directional pass condition:
+### Ecoran Lap
+
+Purpose: lap-to-lap comparison under the measurement-session rules.
+
+Columns:
+- `Lap`
+- `Fuel Econ [km/L]`
+- `Fuel Used [mL]`
+- `Avg Speed [km/h]`
+- `Engine Energy [kJ]`
+- `Roll Energy [kJ]`
+- `Aero Energy [kJ]`
+- `Accel Energy [kJ]`
+- `Grade Energy [kJ]`
+- `Restart Count`
+- `Engine ON Ratio [%]`
+
+The table no longer uses a separate provisional-only row widget. The bottom
+row slot is reused for the current provisional lap and prefixed with `>`.
+
+### Ecoran BSFC
+
+Purpose: actual engine operating-point analysis.
+
+Content:
+- BSFC heatmap
+- current point
+- last 10 seconds trace in wall-clock time
+- axis labels for RPM and load
+
+Engine-off rule:
+- `Current RPM` displays `0`
+- `Current Load` displays `---`
+- `Current BSFC` displays `---`
+- current map point is hidden
+- trace keeps wall-clock continuity by inserting gaps while engine-off
+
+### Ecoran Debug
+
+Purpose: auditability for raw values, demand values, and estimate source.
+
+Content includes:
+- raw vs display gear
+- raw RPM
+- grade source
+- vertical-axis selection
+- raw coordinates / distance / pitch
+- demand load / BSFC / fuel flow
+- estimate source
+- current lap progress
+- restart count
+- engine-on ratio
+
+## Net Energy Balance
+
+`Net Energy Balance [kJ]` is the time integral of:
+
+`P_engine_demand - P_roll - P_aero - P_accel - P_grade`
+
+It is not kinetic energy and not a stored physical energy state.
+
+Interpret it as a residual of the current power-balance model, not as a real
+"battery" or "energy tank".
+
+## Presets and Visibility
+
+Each window has its own show/hide flag:
+
+- `ui_show_main_window`
+- `ui_show_power_window`
+- `ui_show_lap_window`
+- `ui_show_bsfc_window`
+- `ui_show_debug_window`
+
+Presets:
+- `overview`: main only
+- `analysis`: main + power
+- `lap`: main + lap
+- `bsfc`: main + bsfc
+- `debug`: main + power + debug
+- `custom`: any manual combination
+
+The Main window exposes the preset cycle button and per-window toggles. When
+`measurement_start_mode = manual_arm_then_cross_sf`, the Main window also shows
+an `ARM` button.
+
+## Data Flow
+
+Runtime order remains:
 
 ```text
-s0 = dot(p0 - c, n)
-s1 = dot(p1 - c, n)
-
-cross when s0 < 0 and s1 >= 0
+shared memory
+  -> telemetry_reader.read_telemetry()
+  -> grade_estimator.update()
+  -> forces.calc_forces()
+  -> rpm_load.calc_load()
+  -> bsfc_interp.query()
+  -> fuel_integrator.compute_fuel_flow()
+  -> lap_tracker.update()
+  -> strategy_metrics.build_8lap_estimate()
+  -> window_manager.update_windows()
 ```
 
-Width condition:
+## Persistence
+
+Window positions, sizes, visibility, and current preset are stored in:
 
 ```text
-u = dot(p1 - c, t)
-abs(u) <= half_width_m
+%LOCALAPPDATA%\ecoran_fuel_monitor\ui_state.json
 ```
-
-Cooldown and minimum-speed guards are checked before a trigger is accepted.
-
-Finish-gate triggers are also guarded by:
-
-- `minimum_valid_run_time_s`
-- `minimum_valid_finish_lap_count`
-
-## Gate Storage
-
-Gates are stored in JSON under:
-
-```text
-config/gates/<track_key>.json
-```
-
-`track_key` currently comes from AC shared memory:
-
-- `static.track`
-- `static.trackConfiguration`
-
-The app:
-
-- auto-saves after edit operations
-- auto-loads on track/layout change
-- survives broken JSON by falling back to an empty gate state
-
-## Render Callback Ownership
-
-- `panel_main.render()` paints the HUD shell
-- `graph_renderer.draw()` paints the Power trend graph
-- `gauge_renderer.draw()` paints the Power stacked bar and residual sparkline
-- `bsfc_renderer.draw()` paints the BSFC map and overlays
-- `panel_lap.render()` paints the table background and borders
-
-This keeps label layout and GL painting separate while preserving the existing
-render-callback model.

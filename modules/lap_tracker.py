@@ -19,32 +19,27 @@ class LapTracker(object):
         self._measurement_lap_start_abs_dist_m = 0.0
         self._measurement_lap_start_fuel_ml = 0.0
         self._measurement_full_lap_started = False
-        self._measurement_gate_based = False
         self.lap_fuel_history = []
         self.laps_completed = 0
 
     def start_measurement(self, abs_dist_m, cumul_fuel_ml,
-                          at_sf=False, ignore_initial_partial=True,
-                          gate_based=False):
+                          at_sf=False, ignore_initial_partial=True):
         self.measurement_active = True
         self.measurement_start_abs_dist_m = float(abs_dist_m)
         self._measurement_lap_start_abs_dist_m = float(abs_dist_m)
         self._measurement_lap_start_fuel_ml = float(cumul_fuel_ml)
-        self._measurement_full_lap_started = bool(gate_based or at_sf or not ignore_initial_partial)
-        self._measurement_gate_based = bool(gate_based)
+        self._measurement_full_lap_started = bool(at_sf or not ignore_initial_partial)
         self.lap_fuel_history = []
         self.laps_completed = 0
 
-    def stop_measurement(self, clear_history=True):
+    def stop_measurement(self):
         self.measurement_active = False
         self.measurement_start_abs_dist_m = self._session_dist_m
         self._measurement_lap_start_abs_dist_m = self._session_dist_m
-        self._measurement_lap_start_fuel_ml = self._last_cumul_fuel_ml
+        self._measurement_lap_start_fuel_ml = 0.0
         self._measurement_full_lap_started = False
-        self._measurement_gate_based = False
-        if clear_history:
-            self.lap_fuel_history = []
-            self.laps_completed = 0
+        self.lap_fuel_history = []
+        self.laps_completed = 0
 
     def update(self, norm_pos, lap_count, cumul_fuel_ml):
         self._last_cumul_fuel_ml = float(cumul_fuel_ml)
@@ -87,8 +82,6 @@ class LapTracker(object):
         event["cross_abs_dist_m"] = cross_abs_dist_m
 
         if not self.measurement_active:
-            return
-        if self._measurement_gate_based:
             return
 
         if self._measurement_full_lap_started:
@@ -141,24 +134,6 @@ class LapTracker(object):
         if progress > 1.5:
             return 1.5
         return progress
-
-    def complete_gate_lap(self, abs_dist_m, cumul_fuel_ml):
-        if not self.measurement_active:
-            return None
-        lap_fuel = max(float(cumul_fuel_ml) - self._measurement_lap_start_fuel_ml, 0.0)
-        self.lap_fuel_history.append(lap_fuel)
-        self.laps_completed += 1
-        self._measurement_lap_start_fuel_ml = float(cumul_fuel_ml)
-        self._measurement_lap_start_abs_dist_m = float(abs_dist_m)
-        self._measurement_full_lap_started = True
-        self._measurement_gate_based = True
-        return lap_fuel
-
-    def reset_lap_reference(self, abs_dist_m, cumul_fuel_ml, gate_based=True):
-        self._measurement_lap_start_abs_dist_m = float(abs_dist_m)
-        self._measurement_lap_start_fuel_ml = float(cumul_fuel_ml)
-        self._measurement_full_lap_started = True
-        self._measurement_gate_based = bool(gate_based)
 
 
 tracker = LapTracker()

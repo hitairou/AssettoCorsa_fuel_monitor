@@ -95,7 +95,6 @@ def read_telemetry():
         state.observed_clutch = _safe_float(ph, "clutch")
         state.observed_fuel = _safe_float(ph, "fuel")
         state.raw_pitch = _safe_float(ph, "pitch")
-        state.raw_heading = _safe_float(ph, "heading")
         state.raw_velocity = _safe_vec3(ph, "velocity", "localVelocity")
 
         state.observed_lap_count = _safe_int(gr, "completedLaps")
@@ -115,7 +114,6 @@ def read_telemetry():
         state.clutch = state.observed_clutch
         state.fuel = state.observed_fuel
         state.pitch = state.raw_pitch
-        state.heading = state.raw_heading
         state.velocity = list(state.raw_velocity)
         state.lap_count = state.observed_lap_count
         state.norm_pos = state.observed_norm_pos
