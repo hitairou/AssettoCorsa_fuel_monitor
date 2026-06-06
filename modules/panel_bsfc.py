@@ -5,7 +5,7 @@ from modules import bsfc_renderer
 
 from modules.display_format import fmt_float, fmt_pct, fmt_rpm
 
-from modules.panel_common import add_label, move, set_color, set_text, safe_call
+from modules.panel_common import add_label, move, set_color, set_text
 
 try:
     import ac
@@ -42,10 +42,7 @@ def layout(window_size):
 
 
 def create(window_id):
-    labels = {
-        "window_id": window_id,
-        "cell_labels": [],
-    }
+    labels = {"window_id": window_id}
 
     labels["summary"] = add_label(window_id, "---", 0, 0, 260, 18, 13, "center")
     labels["x_axis_title"] = add_label(window_id, "RPM [1/min]", 0, 0, 96, 12, 9, "center")
@@ -59,14 +56,12 @@ def create(window_id):
     for _load in (100, 80, 60, 40, 20, 0):
         labels["y_ticks"].append(add_label(window_id, "---", 0, 0, 30, 12, 9, "right"))
 
-    _ensure_cell_labels(labels)
     _apply_layout(labels, WINDOW_SIZE)
     return labels
 
 
 def update(labels, state):
     size = tuple(state.ui_window_sizes.get("bsfc", WINDOW_SIZE))
-    _ensure_cell_labels(labels)
     _apply_layout(labels, size)
 
     current_rpm = 0 if state.current_load_display_ratio is None else state.observed_rpm
@@ -88,27 +83,6 @@ def update(labels, state):
     set_color(labels["y_axis_title"], (0.86, 0.88, 0.92, 0.84 * dim_alpha))
     for tick in labels["x_ticks"] + labels["y_ticks"]:
         set_color(tick, (0.82, 0.84, 0.88, 0.76 * dim_alpha))
-    for cell in labels["cell_labels"]:
-        set_color(cell["id"], (1.0, 1.0, 1.0, 1.0))
-
-
-def _ensure_cell_labels(labels):
-    if labels["cell_labels"]:
-        return
-
-    window_id = labels["window_id"]
-    for item in bsfc_renderer.get_cell_labels():
-        label_id = add_label(window_id, item["text"], 0, 0, 30, 10, 8, "center")
-        labels["cell_labels"].append({
-            "id": label_id,
-            "rpm": item["rpm"],
-            "load": item["load"],
-            "text": item["text"],
-        })
-
-
-def prime_cell_labels(labels):
-    _ensure_cell_labels(labels)
 
 
 def _apply_layout(labels, size):
@@ -131,7 +105,3 @@ def _apply_layout(labels, size):
         py = y0 + int((float(idx) / float(len(loads) - 1)) * h) - 6
         set_text(labels["y_ticks"][idx], str(load))
         move(labels["y_ticks"][idx], PADDING, py, AXIS_LEFT_W - 6, 12)
-
-    for cell in labels["cell_labels"]:
-        px, py = bsfc_renderer.cell_label_position(cell["rpm"], cell["load"], map_rect)
-        move(cell["id"], int(px - 15), int(py - 5), 30, 10)
