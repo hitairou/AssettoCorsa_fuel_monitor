@@ -60,6 +60,7 @@ _elapsed_time_s = 0.0
 _last_update_error = None
 _last_bsfc_diag_log_s = -1.0
 _last_bsfc_trace_log_s = -1.0
+_last_runtime_diag_log_s = -1.0
 
 _LOG_DIR = os.environ.get("TEMP", _APP_DIR)
 _LOG_FILE = os.path.join(_LOG_DIR, "ecoran_fuel_monitor_debug.txt")
@@ -384,7 +385,7 @@ def acMain(ac_version):
 
 
 def acUpdate(delta_t):
-    global _elapsed_time_s, _last_update_error
+    global _elapsed_time_s, _last_update_error, _last_runtime_diag_log_s
 
     stage = "start"
     try:
@@ -403,14 +404,32 @@ def acUpdate(delta_t):
         stage = "main update"
         state.accum_t += dt
         update_interval = float(state.strategy.get("update_interval_s", 0.1))
+        main_update_ran = False
         if state.accum_t >= update_interval:
             _main_update(state.accum_t)
+            main_update_ran = True
             state.accum_t = 0.0
 
         stage = "ui refresh"
-        state.build_id = _compute_build_id()
         update_windows(state)
         _last_update_error = None
+
+        if _cfg_bool(state.strategy.get("debug_mode", 0), False) and (_elapsed_time_s - _last_runtime_diag_log_s >= 1.0):
+            _last_runtime_diag_log_s = _elapsed_time_s
+            _log(
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine={3} bsfc_trace={4} rpm={5} engine_on={6} cur_load={7} last_render={8}".format(
+                    dt,
+                    state.accum_t,
+                    int(main_update_ran),
+                    len(state.hist_engine),
+                    len(state.bsfc_trace_rpm),
+                    int(state.observed_rpm),
+                    int(state.engine_on),
+                    state.current_load_display_ratio,
+                    getattr(state, "last_render_error", ""),
+                ),
+                force=True,
+            )
     except Exception as exc:
         err_sig = "{0}: {1}".format(type(exc).__name__, exc)
         if err_sig != _last_update_error:
@@ -553,7 +572,7 @@ def _main_update(dt):
         state.current_fuel_flow_display_ml_s = bsfc_vf_dot
     else:
         state.current_bsfc_display_g_per_kwh = None
-        state.current_load_display_ratio = None
+        state.current_load_display_ratio = bsfc_load
         state.current_fuel_flow_display_ml_s = 0.0
 
     if engine_point_valid:

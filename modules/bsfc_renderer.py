@@ -95,8 +95,14 @@ def draw(state, rect):
     _draw_heatmap(rect)
     _draw_grid(rect)
     _draw_cell_labels(rect)
-    _draw_trace(state, rect)
-    _draw_current_point(state, rect)
+    try:
+        _draw_trace(state, rect)
+    except Exception as exc:
+        _log_trace_exception_once(exc)
+    try:
+        _draw_current_point(state, rect)
+    except Exception as exc:
+        _log_trace_exception_once(exc)
 
 
 def _draw_background(rect):
@@ -191,11 +197,13 @@ def _draw_trace(state, rect):
     segments = []
     prev = None
     for idx in range(count):
-        rpm = float(trace_rpm[idx])
-        load = float(trace_load[idx])
+        rpm = trace_rpm[idx]
+        load = trace_load[idx]
         if not _valid_point(rpm, load):
             prev = None
             continue
+        rpm = float(rpm)
+        load = float(load)
         cur = (_rpm_to_px(rpm, rect), _load_to_py(load, rect))
         if prev is not None:
             segments.append((prev, cur, idx))
@@ -243,6 +251,19 @@ def _draw_current_point(state, rect):
     ac.glEnd()
 
 
+def _valid_point(rpm, load):
+    try:
+        rpm = float(rpm)
+        load = float(load)
+    except Exception:
+        return False
+    if math.isnan(rpm) or math.isnan(load):
+        return False
+    if math.isinf(rpm) or math.isinf(load):
+        return False
+    return True
+
+
 def _init_fonts():
     global _font_index, _shadow_font_index
     if not _AC_OK:
@@ -269,6 +290,17 @@ def _debug_log(message):
             handle.write(message + "\n")
     except Exception:
         pass
+
+
+_trace_exception_logged = False
+
+
+def _log_trace_exception_once(exc):
+    global _trace_exception_logged
+    if _trace_exception_logged:
+        return
+    _trace_exception_logged = True
+    _debug_log("trace draw failed: {0}".format(exc))
 
 
 def _rpm_to_px(rpm, rect):

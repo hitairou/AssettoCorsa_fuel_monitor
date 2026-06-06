@@ -244,6 +244,8 @@ def _log_render_exception(key):
     if err == _last_render_error.get(key):
         return
     _last_render_error[key] = err
+    if _state_ref is not None:
+        _state_ref.last_render_error = "render callback failed: {0}".format(key)
     _log_exception("render callback failed: {0}".format(key))
 
 

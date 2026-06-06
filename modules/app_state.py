@@ -132,6 +132,7 @@ class AppState(object):
         self.time_remaining_s = None
         self.pace_delta_s = None
         self.cumul_fuel_ml = 0.0
+        self.last_render_error = ""
 
         self.estimated_km_per_l = 0.0
 
