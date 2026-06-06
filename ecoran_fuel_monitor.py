@@ -108,6 +108,63 @@ def _cfg_bool(value, default=False):
     return default
 
 
+def _to_float_or_none(value):
+    try:
+        value = float(value)
+    except Exception:
+        return None
+    if math.isnan(value) or math.isinf(value):
+        return None
+    return value
+
+
+def _nice_power_scale(raw_scale, minimum_scale, maximum_scale):
+    nice_scales = (100.0, 200.0, 300.0, 500.0, 750.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0)
+    minimum_scale = max(float(minimum_scale), 1.0)
+    maximum_scale = max(float(maximum_scale), minimum_scale)
+    raw_scale = max(minimum_scale, min(float(raw_scale), maximum_scale))
+    for candidate in nice_scales:
+        if candidate < minimum_scale:
+            continue
+        if candidate >= raw_scale:
+            return float(min(candidate, maximum_scale))
+    return float(maximum_scale)
+
+
+def _power_graph_scale_from_state(state, strategy):
+    auto_scale = _cfg_bool(strategy.get("power_graph_auto_scale", 1), True)
+    if not auto_scale:
+        fixed_scale = float(strategy.get("power_graph_scale_w", 2000.0))
+        return fixed_scale, None, None
+
+    series_pairs = (
+        ("hist_engine", "current_P_engine"),
+        ("hist_roll", "current_P_roll"),
+        ("hist_aero", "current_P_aero"),
+        ("hist_accel", "current_P_accel_term"),
+        ("hist_grade", "current_P_grade_term"),
+    )
+    samples = []
+    for hist_attr, current_attr in series_pairs:
+        hist_buf = getattr(state, hist_attr, None)
+        if hist_buf is not None:
+            for value in hist_buf.to_list():
+                value = _to_float_or_none(value)
+                if value is not None:
+                    samples.append(abs(value))
+        current_value = _to_float_or_none(getattr(state, current_attr, None))
+        if current_value is not None:
+            samples.append(abs(current_value))
+
+    peak_power = max(samples) if samples else 0.0
+    margin = float(strategy.get("power_graph_scale_margin", 1.25))
+    min_scale = float(strategy.get("power_graph_min_scale_w", 100.0))
+    max_scale = float(strategy.get("power_graph_max_scale_w", 5000.0))
+    raw_scale = peak_power * margin
+    chosen_scale = _nice_power_scale(raw_scale, min_scale, max_scale)
+    return chosen_scale, peak_power, raw_scale
+
+
 def _compute_build_id():
     files = (
         os.path.join(_APP_DIR, "ecoran_fuel_monitor.py"),
@@ -421,7 +478,9 @@ def acUpdate(delta_t):
             accel_diag = graph_diag.get("hist_accel", {})
             _log(
                 "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine={3} bsfc_trace={4} rpm={5} engine_on={6} cur_load={7} "
-                "hist_engine_last={8} cur_P_engine={9} hist_accel_last={10} cur_P_accel={11} graph_last={12} graph_err={13} last_render={14}".format(
+                "scale={8:.1f} peak={9:.1f} target={10:.1f} "
+                "engine_tail_prev={11} engine_tail_curr={12} cur_P_engine={13} "
+                "accel_tail_prev={14} accel_tail_curr={15} cur_P_accel={16} graph_err={17} last_render={18}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
@@ -430,11 +489,15 @@ def acUpdate(delta_t):
                     int(state.observed_rpm),
                     int(state.engine_on),
                     state.current_load_display_ratio,
-                    engine_diag.get("hist_last"),
+                    float(getattr(state, "power_graph_scale_w", 0.0)),
+                    float(getattr(state, "power_graph_peak_power_w", 0.0) or 0.0),
+                    float(getattr(state, "power_graph_scale_raw_w", 0.0) or 0.0),
+                    engine_diag.get("tail_prev"),
+                    engine_diag.get("tail_current"),
                     state.current_P_engine,
-                    accel_diag.get("hist_last"),
+                    accel_diag.get("tail_prev"),
+                    accel_diag.get("tail_current"),
                     state.current_P_accel_term,
-                    engine_diag.get("current"),
                     engine_diag.get("error") or accel_diag.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
@@ -513,16 +576,6 @@ def _main_update(dt):
     state.hist_aero.append(P_aero)
     state.hist_accel.append(P_accel_t)
     state.hist_grade.append(P_grade_t)
-
-    if _cfg_bool(strategy.get("power_graph_auto_scale", 1), True):
-        power_samples = []
-        for attr in ("hist_engine", "hist_roll", "hist_aero", "hist_accel", "hist_grade"):
-            power_samples.extend([abs(float(v)) for v in getattr(state, attr).to_list()])
-        peak_power = max(power_samples) if power_samples else 0.0
-        state.power_graph_scale_w = max(2000.0, peak_power * 1.15, 500.0)
-    else:
-        state.power_graph_scale_w = float(strategy.get("power_graph_scale_w", 2000.0))
-    state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
@@ -636,6 +689,9 @@ def _main_update(dt):
     state.current_P_grade_term = state.demand_grade_power_w
     state.current_P_engine = state.demand_engine_power_w
     state.current_E_store = state.net_energy_balance_j
+
+    state.power_graph_scale_w, state.power_graph_peak_power_w, state.power_graph_scale_raw_w = _power_graph_scale_from_state(state, strategy)
+    state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)
 
     state.first_update = False
 

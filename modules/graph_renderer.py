@@ -35,7 +35,8 @@ def draw(state, rect):
     if w <= 4 or h <= 4:
         return
 
-    scale = max(float(getattr(state, "power_graph_scale_w", Y_MAX)), 500.0)
+    state.graph_renderer_diag = {}
+    scale = max(float(getattr(state, "power_graph_scale_w", Y_MAX)), 1.0)
     _draw_background(x, y, w, h)
     _draw_grid(x, y, w, h, scale)
     _draw_series(state, x, y, w, h, scale)
@@ -87,11 +88,11 @@ def _draw_series(state, x, y, w, h, scale):
         try:
             points = _build_series_points(values, current_value, x, y, w, h, scale)
         except Exception as exc:
-            _record_series_diag(state, attr, None, None, None, None, None, None, "build failed: {0}".format(exc))
+            _record_series_diag(state, attr, None, None, None, "build failed: {0}".format(exc))
             continue
 
         if not points:
-            _record_series_diag(state, attr, None, None, None, None, None, None, "no valid points")
+            _record_series_diag(state, attr, None, None, None, "no valid points")
             continue
 
         try:
@@ -104,12 +105,9 @@ def _draw_series(state, x, y, w, h, scale):
             _record_series_diag(
                 state,
                 attr,
-                points[-1][0],
-                points[-1][1],
-                points[-1][0],
-                points[-1][1],
-                points[-1][0],
-                points[-1][1],
+                points[0] if points else None,
+                points[-2] if len(points) >= 2 else None,
+                points[-1] if points else None,
                 "line failed: {0}".format(exc),
             )
             continue
@@ -124,30 +122,10 @@ def _draw_series(state, x, y, w, h, scale):
             ac.glVertex2f(dot_px - 2.2, dot_py + 2.2)
             ac.glEnd()
         except Exception as exc:
-            _record_series_diag(
-                state,
-                attr,
-                points[0][0],
-                points[0][1],
-                points[-1][0],
-                points[-1][1],
-                dot_px,
-                dot_py,
-                "dot failed: {0}".format(exc),
-            )
+            _record_series_diag(state, attr, points[0], points[-2] if len(points) >= 2 else None, points[-1], "dot failed: {0}".format(exc))
             continue
 
-        _record_series_diag(
-            state,
-            attr,
-            points[0][0],
-            points[0][1],
-            points[-1][0],
-            points[-1][1],
-            dot_px,
-            dot_py,
-            "",
-        )
+        _record_series_diag(state, attr, points[0], points[-2] if len(points) >= 2 else None, points[-1], "")
 
 
 def _build_series_points(values, current_value, x, y, w, h, scale):
@@ -161,13 +139,16 @@ def _build_series_points(values, current_value, x, y, w, h, scale):
             continue
 
     points = []
-    live_gap = min(max(6.0, w * 0.015), 10.0)
-    history_width = max(w - live_gap, 1.0)
+    dot_radius = 2.2
+    current_x = x + max(w - dot_radius - 1.0, 0.0)
+    live_gap = min(max(8.0, w * 0.02), 12.0)
+    history_right_x = max(current_x - live_gap, x)
+    history_width = max(history_right_x - x, 0.0)
 
     history_count = len(history)
     if history_count:
         if history_count == 1:
-            history_x_positions = [x + history_width]
+            history_x_positions = [history_right_x]
         else:
             denom = float(history_count - 1)
             history_x_positions = [x + (float(idx) / denom) * history_width for idx in range(history_count)]
@@ -177,7 +158,7 @@ def _build_series_points(values, current_value, x, y, w, h, scale):
 
     current_value = _to_float_or_none(current_value)
     if current_value is not None and _valid_power_value(current_value):
-        current_px = x + w
+        current_px = current_x
         current_py = _power_to_clamped_py(current_value, y, h, scale)
         if not points:
             points.append((current_px, current_py))
@@ -219,15 +200,15 @@ def _to_float_or_none(value):
         return None
 
 
-def _record_series_diag(state, attr, hist_x, hist_y, last_x, last_y, dot_x, dot_y, error):
+def _record_series_diag(state, attr, first_point, prev_point, current_point, error):
     diag = getattr(state, "graph_renderer_diag", None)
     if diag is None:
         diag = {}
         state.graph_renderer_diag = diag
     diag[attr] = {
-        "hist_last": (hist_x, hist_y),
-        "current": (dot_x, dot_y),
-        "last_point": (last_x, last_y),
+        "first_point": first_point,
+        "tail_prev": prev_point,
+        "tail_current": current_point,
         "error": error,
     }
 
