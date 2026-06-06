@@ -23,13 +23,18 @@ _load_min = 0.0
 _load_max = 1.0
 _bg_cells = []
 _cell_labels = []
+_font_index = None
+_shadow_font_index = None
 
 
 def init(bsfc_interp):
     global _rpm_min, _rpm_max, _load_min, _load_max, _bg_cells, _cell_labels
+    global _font_index, _shadow_font_index
 
     _bg_cells = []
     _cell_labels = []
+    _font_index = None
+    _shadow_font_index = None
     rpm_axis = getattr(bsfc_interp, "rpm_axis", [])
     load_axis = getattr(bsfc_interp, "load_axis", [])
 
@@ -58,6 +63,8 @@ def init(bsfc_interp):
                 "text": str(int(round(bsfc))),
             })
 
+    _init_fonts()
+
 
 def get_cell_labels():
     return list(_cell_labels)
@@ -74,6 +81,7 @@ def draw(state, rect):
     _draw_background(rect)
     _draw_heatmap(rect)
     _draw_grid(rect)
+    _draw_cell_labels(rect)
     _draw_trace(state, rect)
     _draw_current_point(state, rect)
 
@@ -123,6 +131,25 @@ def _draw_grid(rect):
         ac.glEnd()
 
 
+def _draw_cell_labels(rect):
+    if not _cell_labels or _font_index is None:
+        return
+
+    for cell in _cell_labels:
+        px = _rpm_to_px(cell["rpm"], rect)
+        py = _load_to_py(cell["load"], rect)
+        text = str(cell["text"])
+        shadow_pos = (px + 1.0, py + 1.0)
+        text_pos = (px, py)
+        try:
+            ac.ext_glFontColor(_shadow_font_index, (0.0, 0.0, 0.0, 0.85))
+            ac.ext_glFontUse(_shadow_font_index, text, shadow_pos, 1.0, 2)
+            ac.ext_glFontColor(_font_index, (1.0, 1.0, 1.0, 1.0))
+            ac.ext_glFontUse(_font_index, text, text_pos, 1.0, 2)
+        except Exception:
+            continue
+
+
 def _draw_trace(state, rect):
     trace_rpm = state.bsfc_trace_rpm.to_list()
     trace_load = state.bsfc_trace_load.to_list()
@@ -163,6 +190,20 @@ def _draw_current_point(state, rect):
     ac.glVertex2f(px + size, py + size)
     ac.glVertex2f(px - size, py + size)
     ac.glEnd()
+
+
+def _init_fonts():
+    global _font_index, _shadow_font_index
+    if not _AC_OK:
+        return
+    if _font_index is not None and _shadow_font_index is not None:
+        return
+    try:
+        _font_index = ac.ext_glFontCreate("arial", 8.5, 0, 400)
+        _shadow_font_index = ac.ext_glFontCreate("arial", 8.5, 0, 400)
+    except Exception:
+        _font_index = None
+        _shadow_font_index = None
 
 
 def cell_label_position(rpm, load, rect):
