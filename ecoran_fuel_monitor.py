@@ -501,9 +501,6 @@ def _main_update(dt):
     if engine_point_valid:
         state.bsfc_trace_rpm.append(float(state.observed_rpm))
         state.bsfc_trace_load.append(float(demand_load))
-    else:
-        state.bsfc_trace_rpm.append(float("nan"))
-        state.bsfc_trace_load.append(float("nan"))
 
     if state.engine_on:
         state.cumul_fuel_ml = euler_step(state.cumul_fuel_ml, vf_dot, dt)
