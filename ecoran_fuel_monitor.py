@@ -488,7 +488,7 @@ def _main_update(dt):
     state.demand_fuel_mass_flow_g_s = mf_dot
     state.demand_fuel_flow_ml_s = vf_dot
 
-    engine_point_valid = state.engine_on and state.display_gear > 0 and state.observed_rpm >= 100
+    engine_point_valid = state.engine_on and state.observed_rpm >= 100
     if engine_point_valid:
         state.current_bsfc_display_g_per_kwh = demand_bsfc
         state.current_load_display_ratio = demand_load
