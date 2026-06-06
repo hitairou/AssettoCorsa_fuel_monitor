@@ -219,13 +219,22 @@ def _sync_runtime_geometry(state):
 def _render_power(*args):
     if _state_ref is None:
         return
+    size = _state_ref.ui_window_sizes.get("power", WINDOW_SPECS["power"]["size"])
     try:
-        size = _state_ref.ui_window_sizes.get("power", WINDOW_SPECS["power"]["size"])
         geo = panel_power.layout(size)
-        graph_renderer.draw(_state_ref, geo["graph_rect"])
-        gauge_renderer.draw(_state_ref, geo["bar_rect"], geo["estore_rect"])
     except Exception:
         _log_render_exception("power")
+        return
+
+    try:
+        graph_renderer.draw(_state_ref, geo["graph_rect"])
+    except Exception:
+        _log_render_exception("power_graph")
+
+    try:
+        gauge_renderer.draw(_state_ref, geo["bar_rect"], geo["estore_rect"])
+    except Exception:
+        _log_render_exception("power_gauge")
 
 
 def _render_bsfc(*args):

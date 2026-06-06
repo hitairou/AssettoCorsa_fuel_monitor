@@ -416,8 +416,12 @@ def acUpdate(delta_t):
 
         if _cfg_bool(state.strategy.get("debug_mode", 0), False) and (_elapsed_time_s - _last_runtime_diag_log_s >= 1.0):
             _last_runtime_diag_log_s = _elapsed_time_s
+            graph_diag = getattr(state, "graph_renderer_diag", {})
+            engine_diag = graph_diag.get("hist_engine", {})
+            accel_diag = graph_diag.get("hist_accel", {})
             _log(
-                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine={3} bsfc_trace={4} rpm={5} engine_on={6} cur_load={7} last_render={8}".format(
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine={3} bsfc_trace={4} rpm={5} engine_on={6} cur_load={7} "
+                "hist_engine_last={8} cur_P_engine={9} hist_accel_last={10} cur_P_accel={11} graph_last={12} graph_err={13} last_render={14}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
@@ -426,6 +430,12 @@ def acUpdate(delta_t):
                     int(state.observed_rpm),
                     int(state.engine_on),
                     state.current_load_display_ratio,
+                    engine_diag.get("hist_last"),
+                    state.current_P_engine,
+                    accel_diag.get("hist_last"),
+                    state.current_P_accel_term,
+                    engine_diag.get("current"),
+                    engine_diag.get("error") or accel_diag.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
                 force=True,
