@@ -6,7 +6,7 @@ _HIST_LEN = 100   # 10 s at 10 Hz
 
 class AppState(object):
     def __init__(self):
-        from modules.history_buffers import RingBuffer
+        from modules.history_buffers import RingBuffer, TimeWindowBuffer
 
         # ------------------------------------------------------------------
         # Observed / actual telemetry from shared memory
@@ -99,6 +99,7 @@ class AppState(object):
         self.hist_accel = RingBuffer(_HIST_LEN)
         self.hist_grade = RingBuffer(_HIST_LEN)
         self.hist_power_time = RingBuffer(_HIST_LEN)
+        self.power_trace_samples = TimeWindowBuffer(window_s=10.0, maxlen=1000)
 
         self.bsfc_trace_rpm = RingBuffer(_HIST_LEN)
         self.bsfc_trace_load = RingBuffer(_HIST_LEN)

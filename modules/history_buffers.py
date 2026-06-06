@@ -38,3 +38,38 @@ class RingBuffer(object):
     @property
     def full(self):
         return self._size == self._maxlen
+
+
+class TimeWindowBuffer(object):
+    """Time-window buffer for structured samples."""
+
+    def __init__(self, window_s=10.0, maxlen=1000):
+        self.window_s = float(window_s)
+        self.maxlen = int(maxlen)
+        self._buf = []
+
+    def append(self, sample):
+        self._buf.append(sample)
+        if len(self._buf) > self.maxlen:
+            self._buf = self._buf[-self.maxlen:]
+
+    def trim(self, now):
+        cutoff = float(now) - self.window_s
+        trimmed = []
+        for sample in self._buf:
+            try:
+                sample_time = float(sample.get("t", 0.0))
+            except Exception:
+                continue
+            if sample_time >= cutoff:
+                trimmed.append(sample)
+        self._buf = trimmed
+
+    def to_list(self):
+        return list(self._buf)
+
+    def clear(self):
+        self._buf = []
+
+    def __len__(self):
+        return len(self._buf)
