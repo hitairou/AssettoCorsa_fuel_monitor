@@ -169,7 +169,13 @@ def _compute_build_id():
     files = (
         os.path.join(_APP_DIR, "ecoran_fuel_monitor.py"),
         os.path.join(_APP_DIR, "modules", "panel_main.py"),
+        os.path.join(_APP_DIR, "modules", "panel_power.py"),
+        os.path.join(_APP_DIR, "modules", "graph_renderer.py"),
+        os.path.join(_APP_DIR, "modules", "gauge_renderer.py"),
+        os.path.join(_APP_DIR, "modules", "app_state.py"),
+        os.path.join(_APP_DIR, "modules", "history_buffers.py"),
         os.path.join(_APP_DIR, "modules", "bsfc_renderer.py"),
+        os.path.join(_APP_DIR, "modules", "window_manager.py"),
     )
     digest = hashlib.sha1()
     for path in files:
@@ -572,6 +578,19 @@ def _main_update(dt):
     state.hist_aero.append(P_aero)
     state.hist_accel.append(P_accel_t)
     state.hist_grade.append(P_grade_t)
+    state.power_hist_debug = {
+        "append_time": _elapsed_time_s,
+        "hist_engine_len": len(state.hist_engine),
+        "hist_engine_last": demand_engine_power_w,
+        "hist_roll_len": len(state.hist_roll),
+        "hist_roll_last": P_roll,
+        "hist_aero_len": len(state.hist_aero),
+        "hist_aero_last": P_aero,
+        "hist_accel_len": len(state.hist_accel),
+        "hist_accel_last": P_accel_t,
+        "hist_grade_len": len(state.hist_grade),
+        "hist_grade_last": P_grade_t,
+    }
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(

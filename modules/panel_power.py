@@ -2,6 +2,7 @@
 # Power analysis window.
 
 from modules.display_format import fmt_kj, fmt_w
+from modules import graph_renderer
 from modules.panel_common import add_label, set_color, set_text
 
 
@@ -81,6 +82,16 @@ def create(window_id):
         window_id, "0s", geo["graph_x"] + geo["graph_w"] - 20, geo["graph_y"] + GRAPH_H + 1, 20, 12, 9, "right"
     )
 
+    labels["diag_rev"] = add_label(
+        window_id, "", PADDING, 4, 390, 10, 8, "left"
+    )
+    labels["diag_hist"] = add_label(
+        window_id, "", PADDING, 16, 390, 10, 8, "left"
+    )
+    labels["diag_state"] = add_label(
+        window_id, "", PADDING, 28, 390, 10, 8, "left"
+    )
+
     legend_step = 82
     for idx, (text, color) in enumerate(LEGEND):
         x = PADDING + idx * legend_step
@@ -128,3 +139,37 @@ def update(labels, state):
         set_color(labels["val_estore"], (0.35, 0.75, 1.0, 1.0))
     else:
         set_color(labels["val_estore"], (1.0, 0.45, 0.45, 1.0))
+
+    graph_diag = getattr(state, "graph_renderer_diag", {})
+    engine_diag = graph_diag.get("hist_engine", {})
+    accel_diag = graph_diag.get("hist_accel", {})
+    set_text(labels["diag_rev"], "GREV: {0}".format(graph_renderer.GRAPH_RENDERER_REV))
+    set_text(
+        labels["diag_hist"],
+        "histE={0} last={1} cur={2} pts={3} err={4} | histA={5} last={6} cur={7} pts={8} err={9}".format(
+            len(state.hist_engine),
+            state.hist_engine.to_list()[-1] if len(state.hist_engine) else "",
+            state.current_P_engine,
+            engine_diag.get("points_count", ""),
+            engine_diag.get("error", ""),
+            len(state.hist_accel),
+            state.hist_accel.to_list()[-1] if len(state.hist_accel) else "",
+            state.current_P_accel_term,
+            accel_diag.get("points_count", ""),
+            accel_diag.get("error", ""),
+        ),
+    )
+    set_text(
+        labels["diag_state"],
+        "lastH={0} curP={1} err={2} render={3} append_t={4} histE={5}/{6} histA={7}/{8}".format(
+            engine_diag.get("last_history_point", ""),
+            engine_diag.get("current_point", ""),
+            engine_diag.get("error", ""),
+            getattr(state, "last_render_error", ""),
+            getattr(state, "power_hist_debug", {}).get("append_time", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_engine_len", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_engine_last", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_accel_len", ""),
+            getattr(state, "power_hist_debug", {}).get("hist_accel_last", ""),
+        ),
+    )

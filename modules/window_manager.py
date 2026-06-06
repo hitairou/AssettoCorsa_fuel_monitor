@@ -254,7 +254,10 @@ def _log_render_exception(key):
         return
     _last_render_error[key] = err
     if _state_ref is not None:
-        _state_ref.last_render_error = "render callback failed: {0}".format(key)
+        if key.startswith("power_graph"):
+            _state_ref.last_render_error = "power_graph: render callback failed"
+        else:
+            _state_ref.last_render_error = "render callback failed: {0}".format(key)
     _log_exception("render callback failed: {0}".format(key))
 
 

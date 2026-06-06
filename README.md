@@ -98,3 +98,15 @@ should not be public.
 - `config/vehicle.ini` contains vehicle constants such as fuel density,
   drivetrain efficiency, gear ratios, race distance, and lap count.
 - Runtime logs and Python caches are intentionally ignored by Git.
+
+## Power Graph Diagnostics
+
+When validating Power graph runtime behavior, check:
+
+1. Main HUD `REV` changes after Power renderer edits.
+2. Power window shows `GREV: power-graph-runtime-proof-001`.
+3. Power graph test lines cover the full graph area.
+4. `histE` increases over time and stays near the expected rolling length.
+5. `last` and `cur` values match the bar display closely.
+6. `pts` is at least 2 and the last history point and current point are near the right edge.
+7. `err` is empty.

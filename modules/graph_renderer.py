@@ -15,6 +15,7 @@ except (ImportError, AttributeError):
 
 
 Y_MAX = 2000.0
+GRAPH_RENDERER_REV = "power-graph-runtime-proof-001"
 SERIES = [
     ("hist_engine", "current_P_engine", 1.0, 1.0, 1.0),
     ("hist_roll", "current_P_roll", 0.3, 1.0, 0.3),
@@ -36,6 +37,7 @@ def draw(state, rect):
     scale = max(float(getattr(state, "power_graph_scale_w", Y_MAX)), 1.0)
     _draw_background(x, y, w, h)
     _draw_grid(x, y, w, h, scale)
+    _draw_test_frame(x, y, w, h, scale)
     _draw_series(state, x, y, w, h, scale)
 
 
@@ -71,8 +73,30 @@ def _draw_grid(x, y, w, h, scale):
         ac.glEnd()
 
 
+def _draw_test_frame(x, y, w, h, scale):
+    current_x = _current_x(x, w)
+    ac.glColor4f(1.0, 0.2, 0.2, 0.85)
+    ac.glBegin(_GL_LINES)
+    ac.glVertex2f(x, y)
+    ac.glVertex2f(x + w, y + h)
+    ac.glVertex2f(x, y + h)
+    ac.glVertex2f(x + w, y)
+    ac.glVertex2f(x, y)
+    ac.glVertex2f(x + w, y)
+    ac.glVertex2f(x + w, y)
+    ac.glVertex2f(x + w, y + h)
+    ac.glVertex2f(x + w, y + h)
+    ac.glVertex2f(x, y + h)
+    ac.glEnd()
+    ac.glBegin(_GL_LINES)
+    ac.glVertex2f(current_x, y)
+    ac.glVertex2f(current_x, y + h)
+    ac.glEnd()
+
+
 def _draw_series(state, x, y, w, h, scale):
     diag = {}
+    first_error = ""
     for attr, current_attr, r, g, b in SERIES:
         buf = getattr(state, attr, None)
         values = buf.to_list() if buf is not None else []
@@ -117,6 +141,8 @@ def _draw_series(state, x, y, w, h, scale):
                 ac.glEnd()
             except Exception as exc:
                 error = "line failed: {0}".format(exc)
+                if not first_error:
+                    first_error = error
 
         if current_point is not None:
             try:
@@ -129,16 +155,28 @@ def _draw_series(state, x, y, w, h, scale):
                 ac.glEnd()
             except Exception as exc:
                 error = error or "dot failed: {0}".format(exc)
+                if not first_error:
+                    first_error = error
 
         diag[attr] = {
-            "hist_len": count,
-            "hist_last": points[-1] if points else None,
+            "raw_hist_len": len(values),
+            "valid_hist_len": count,
+            "first_value": valid_values[0] if valid_values else None,
+            "last_value": valid_values[-1] if valid_values else None,
+            "current_value": current_value,
+            "first_point": points[0] if points else None,
+            "last_history_point": points[-1] if points else None,
             "current_point": current_point,
+            "history_width": history_width,
+            "graph_rect": (x, y, w, h),
+            "scale": scale,
             "points_count": len(points) + (1 if current_point is not None else 0),
             "error": error,
         }
 
     state.graph_renderer_diag = diag
+    if first_error:
+        state.last_render_error = "power_graph: {0}".format(first_error)
 
 
 def _current_x(x, width):
