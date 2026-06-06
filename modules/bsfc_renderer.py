@@ -188,21 +188,30 @@ def _draw_trace(state, rect):
             )
         )
 
-    ac.glColor4f(1.0, 1.0, 0.3, 0.7)
-    drawing = False
+    segments = []
+    prev = None
     for idx in range(count):
         rpm = float(trace_rpm[idx])
         load = float(trace_load[idx])
-        if math.isnan(rpm) or math.isnan(load) or math.isinf(rpm) or math.isinf(load):
-            if drawing:
-                ac.glEnd()
-                drawing = False
+        if not _valid_point(rpm, load):
+            prev = None
             continue
-        if not drawing:
-            ac.glBegin(_GL_LINE_STRIP)
-            drawing = True
-        ac.glVertex2f(_rpm_to_px(rpm, rect), _load_to_py(load, rect))
-    if drawing:
+        cur = (_rpm_to_px(rpm, rect), _load_to_py(load, rect))
+        if prev is not None:
+            segments.append((prev, cur, idx))
+        prev = cur
+
+    if not segments:
+        return
+
+    total = float(max(count - 1, 1))
+    for p0, p1, idx in segments:
+        age = float(idx) / total
+        alpha = 0.14 + age * 0.72
+        ac.glColor4f(1.0, 1.0, 0.3, alpha)
+        ac.glBegin(_GL_LINES)
+        ac.glVertex2f(p0[0], p0[1])
+        ac.glVertex2f(p1[0], p1[1])
         ac.glEnd()
 
 

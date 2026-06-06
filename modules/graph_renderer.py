@@ -91,6 +91,17 @@ def _draw_series(state, x, y, w, h, scale):
             ac.glVertex2f(px, py)
         ac.glEnd()
 
+        last_value = float(values[-1])
+        dot_px = _sample_to_px(count - 1, count, x, w)
+        dot_py = _power_to_py(last_value, y, h, scale)
+        ac.glColor4f(r, g, b, 0.96)
+        ac.glBegin(_GL_QUADS)
+        ac.glVertex2f(dot_px - 2.2, dot_py - 2.2)
+        ac.glVertex2f(dot_px + 2.2, dot_py - 2.2)
+        ac.glVertex2f(dot_px + 2.2, dot_py + 2.2)
+        ac.glVertex2f(dot_px - 2.2, dot_py + 2.2)
+        ac.glEnd()
+
 
 def _power_to_py(power_w, y, height, scale):
     center = y + height / 2.0

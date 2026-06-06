@@ -4,6 +4,8 @@
 import math
 import os
 import sys
+import hashlib
+import uuid
 import traceback
 
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,12 +52,14 @@ _bsfc_interp = None
 _tmax_lookup = None
 _speed_ma = None
 _accel_deriv = None
+_bsfc_accel_deriv = None
 _grade_est = None
 _lap_tracker = None
 
 _elapsed_time_s = 0.0
 _last_update_error = None
 _last_bsfc_diag_log_s = -1.0
+_last_bsfc_trace_log_s = -1.0
 
 _LOG_DIR = os.environ.get("TEMP", _APP_DIR)
 _LOG_FILE = os.path.join(_LOG_DIR, "ecoran_fuel_monitor_debug.txt")
@@ -101,6 +105,22 @@ def _cfg_bool(value, default=False):
         if s in ("false", "no", "off"):
             return False
     return default
+
+
+def _compute_build_id():
+    files = (
+        os.path.join(_APP_DIR, "ecoran_fuel_monitor.py"),
+        os.path.join(_APP_DIR, "modules", "panel_main.py"),
+        os.path.join(_APP_DIR, "modules", "bsfc_renderer.py"),
+    )
+    digest = hashlib.sha1()
+    for path in files:
+        try:
+            with open(path, "rb") as handle:
+                digest.update(handle.read())
+        except Exception:
+            continue
+    return digest.hexdigest()[:6].upper()
 
 
 def _detect_engine(rpm, display_gear, strategy):
@@ -283,7 +303,7 @@ def _update_measurement_state(lap_event, vehicle):
 
 
 def acMain(ac_version):
-    global _bsfc_interp, _tmax_lookup, _speed_ma, _accel_deriv, _grade_est, _lap_tracker
+    global _bsfc_interp, _tmax_lookup, _speed_ma, _accel_deriv, _bsfc_accel_deriv, _grade_est, _lap_tracker
     global _debug_mode
 
     stage = "start"
@@ -295,6 +315,8 @@ def acMain(ac_version):
         state.strategy = strategy
 
         _debug_mode = _cfg_bool(strategy.get("debug_mode", 0), False)
+        state.session_id = uuid.uuid4().hex[:6].upper()
+        state.build_id = _compute_build_id()
 
         state.measurement_start_mode = str(
             strategy.get("measurement_start_mode", "first_cross_sf")
@@ -309,6 +331,8 @@ def acMain(ac_version):
                 pass
 
         _log("acMain called. AC version: {0}".format(ac_version), force=True)
+        _log("session id: {0}".format(state.session_id), force=True)
+        _log("build id: {0}".format(state.build_id), force=True)
 
         initial_preset = str(strategy.get("ui.preset", "overview"))
         apply_preset(state, initial_preset)
@@ -337,6 +361,7 @@ def acMain(ac_version):
         stage = "create smoothing"
         _speed_ma = MovingAverage(window=int(strategy.get("speed_window", 5)))
         _accel_deriv = BoundedDerivative(max_abs=20.0)
+        _bsfc_accel_deriv = BoundedDerivative(max_abs=20.0)
 
         stage = "init grade estimator"
         init_estimator(strategy)
@@ -393,7 +418,7 @@ def acUpdate(delta_t):
 
 
 def _main_update(dt):
-    global _last_bsfc_diag_log_s
+    global _last_bsfc_diag_log_s, _last_bsfc_trace_log_s
 
     strategy = state.strategy
     vehicle = state.vehicle
@@ -430,6 +455,8 @@ def _main_update(dt):
         state.session_restart_count += 1
         if state.measurement_active:
             state.current_lap_restart_count += 1
+        if _bsfc_accel_deriv is not None:
+            _bsfc_accel_deriv.reset()
 
     (F_req, P_wheel, theta,
      P_roll, P_aero, P_accel_t, P_grade_t) = calc_forces(
@@ -467,12 +494,12 @@ def _main_update(dt):
         state.power_graph_scale_w = float(strategy.get("power_graph_scale_w", 2000.0))
     state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)
 
-    engaged_display_gear = state.display_gear if state.display_gear > 0 else 0
+    engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
         max(F_req, 0.0),
         state.observed_rpm,
         vehicle,
-        engaged_display_gear,
+        engaged_raw_gear,
         lambda rpm: _tmax_lookup.query(rpm),
     )
     state.demand_required_torque_nm = T_req
@@ -491,11 +518,38 @@ def _main_update(dt):
     state.demand_fuel_mass_flow_g_s = mf_dot
     state.demand_fuel_flow_ml_s = vf_dot
 
+    bsfc_v_ms = state.observed_speed_ms
+    bsfc_accel = _bsfc_accel_deriv.update(_elapsed_time_s, bsfc_v_ms)
+    (
+        bsfc_F_req,
+        bsfc_P_wheel,
+        _,
+        _bsfc_P_roll,
+        _bsfc_P_aero,
+        _bsfc_P_accel_t,
+        _bsfc_P_grade_t,
+    ) = calc_forces(bsfc_v_ms, bsfc_accel, grade_smooth, vehicle)
+    bsfc_demand_engine_power_w = max(bsfc_P_wheel / max(eta_d, 1e-9), 0.0)
+    _, _, bsfc_load = calc_load(
+        max(bsfc_F_req, 0.0),
+        state.observed_rpm,
+        vehicle,
+        engaged_raw_gear,
+        lambda rpm: _tmax_lookup.query(rpm),
+    )
+    bsfc_bsfc = low_load_correction(
+        _bsfc_interp.query(state.observed_rpm, bsfc_load),
+        bsfc_load,
+    )
+    bsfc_mf_dot, bsfc_vf_dot = compute_fuel_flow(
+        bsfc_bsfc, bsfc_demand_engine_power_w, fuel_density
+    )
+
     engine_point_valid = state.engine_on and state.observed_rpm >= 100
     if engine_point_valid:
-        state.current_bsfc_display_g_per_kwh = demand_bsfc
-        state.current_load_display_ratio = demand_load
-        state.current_fuel_flow_display_ml_s = vf_dot
+        state.current_bsfc_display_g_per_kwh = bsfc_bsfc
+        state.current_load_display_ratio = bsfc_load
+        state.current_fuel_flow_display_ml_s = bsfc_vf_dot
     else:
         state.current_bsfc_display_g_per_kwh = None
         state.current_load_display_ratio = None
@@ -503,7 +557,7 @@ def _main_update(dt):
 
     if engine_point_valid:
         state.bsfc_trace_rpm.append(float(state.observed_rpm))
-        state.bsfc_trace_load.append(float(demand_load))
+        state.bsfc_trace_load.append(float(bsfc_load))
 
     if state.engine_on:
         state.cumul_fuel_ml = euler_step(state.cumul_fuel_ml, vf_dot, dt)
@@ -558,7 +612,7 @@ def _main_update(dt):
     if _elapsed_time_s - _last_bsfc_diag_log_s >= 1.0:
         _last_bsfc_diag_log_s = _elapsed_time_s
         _log(
-            "BSFC diag t={0:.1f} engine_on={1} rpm={2} gear={3} load={4:.3f} trace={5} valid={6} obs_load={7}".format(
+            "BSFC diag t={0:.1f} engine_on={1} rpm={2} gear={3} load={4:.3f} trace={5} valid={6} obs_load={7} bsfc_load={8:.3f}".format(
                 _elapsed_time_s,
                 int(state.engine_on),
                 int(state.observed_rpm),
@@ -567,9 +621,36 @@ def _main_update(dt):
                 len(state.bsfc_trace_rpm),
                 int(engine_point_valid),
                 state.current_load_display_ratio,
+                bsfc_load,
             ),
             force=True,
         )
+
+    if _elapsed_time_s - _last_bsfc_trace_log_s >= 2.0:
+        _last_bsfc_trace_log_s = _elapsed_time_s
+        trace_rpm = state.bsfc_trace_rpm.to_list()
+        trace_load = state.bsfc_trace_load.to_list()
+        count = min(len(trace_rpm), len(trace_load))
+        if count:
+            tail_count = min(5, count)
+            tail = []
+            for idx in range(count - tail_count, count):
+                tail.append(
+                    "{0}:{1:.0f}/{2:.3f}".format(
+                        idx,
+                        float(trace_rpm[idx]),
+                        float(trace_load[idx]),
+                    )
+                )
+            _log(
+                "BSFC trace tail count={0} last={1} current={2:.0f}/{3:.3f}".format(
+                    count,
+                    " | ".join(tail),
+                    float(state.observed_rpm),
+                    float(bsfc_load),
+                ),
+                force=True,
+            )
 
     _log(
         "dt={0:.3f} rawGear={1} dispGear={2} engineOn={3} "

@@ -1,181 +1,202 @@
 # modules/panel_main.py
-# Main dashboard window: summary and current live values.
+# Main HUD-style window with three key values and four corner buttons.
 
-from modules.display_format import (
-    fmt_display_gear,
-    fmt_float,
-    fmt_kj,
-    fmt_pct,
-    fmt_rpm,
-    fmt_sign,
-    fmt_time_ms,
-    pace_delta_color,
-)
+try:
+    import ac
+    import acsys
+    _GL_LINES = acsys.GL.Lines
+    _GL_QUADS = acsys.GL.Quads
+    _AC_OK = True
+except (ImportError, AttributeError):
+    _AC_OK = False
+    _GL_LINES = 1
+    _GL_QUADS = 7
+
+from modules.display_format import fmt_float, fmt_sign, fmt_time_ms
 from modules.panel_common import (
     add_button,
     add_label,
+    move,
     set_button_state,
     set_color,
     set_text,
-    set_visible,
 )
 from modules.ui_presets import PRESET_ABBREV
 
 
-WINDOW_SIZE = (340, 240)
-PADDING = 8
-GAP = 8
-FONT_LABEL = 10
-FONT_VALUE = 11
-BUTTON_H = 22
-ROW_H = 15
+WINDOW_SIZE = (560, 118)
 TITLE_SAFE_TOP = 28
-
-SUMMARY_ROWS = [
-    ("avg_econ", "Avg Fuel Econ [km/L]"),
-    ("avg_speed", "Avg Speed [km/h]"),
-    ("remaining", "Remaining [mm:ss.s]"),
-    ("pace_delta", "Pace Delta [s]"),
-    ("fuel_used", "Fuel Used [mL]"),
-    ("laps", "Laps Comp/Total"),
-]
-
-DETAIL_ROWS = [
-    ("rpm", "RPM"),
-    ("gear", "Display Gear"),
-    ("throttle", "Throttle [%]"),
-    ("grade", "Grade [%]"),
-    ("engine", "Engine"),
-    ("demand_load", "Demand Load [%]"),
-    ("current_bsfc", "Current BSFC [g/kWh]"),
-    ("fuel_flow", "Fuel Flow [mL/s]"),
-    ("fuel_8lap", "8lap Fuel Est [mL]"),
-    ("econ_8lap", "8lap Econ Est [km/L]"),
-    ("net_energy", "Net Energy Balance [kJ]"),
-]
+OUTER_PAD_X = 10
+OUTER_PAD_Y = 8
+BUTTON_W = 48
+BUTTON_H = 20
 
 
 def layout(window_size):
-    width, _height = window_size
-    left_w = (width - PADDING * 2 - GAP) // 2
-    right_w = width - PADDING * 2 - GAP - left_w
-    head_y = TITLE_SAFE_TOP + BUTTON_H + 6
-    top_y = head_y + 18
+    width, height = window_size
+    body_x = OUTER_PAD_X
+    body_y = TITLE_SAFE_TOP + OUTER_PAD_Y
+    body_w = max(width - OUTER_PAD_X * 2, 240)
+    body_h = max(height - body_y - OUTER_PAD_Y, 48)
+
+    inner_pad = 18
+    content_x = body_x + inner_pad
+    content_y = body_y + 12
+    content_w = max(body_w - inner_pad * 2, 200)
+    content_h = max(body_h - 24, 24)
+    block_w = content_w / 3.0
+
     return {
-        "left_x": PADDING,
-        "right_x": PADDING + left_w + GAP,
-        "col_w_left": left_w,
-        "col_w_right": right_w,
-        "head_y": head_y,
-        "top_y": top_y,
+        "body_rect": (body_x, body_y, body_w, body_h),
+        "buttons": {
+            "power": (body_x + 6, body_y + 6),
+            "lap": (body_x + body_w - BUTTON_W - 6, body_y + 6),
+            "bsfc": (body_x + 6, body_y + body_h - BUTTON_H - 6),
+            "debug": (body_x + body_w - BUTTON_W - 6, body_y + body_h - BUTTON_H - 6),
+        },
+        "value_rects": {
+            "avg_econ": (content_x, content_y, block_w, content_h),
+            "pace_delta": (content_x + block_w, content_y, block_w, content_h),
+            "engine": (content_x + block_w * 2.0, content_y, block_w, content_h),
+        },
     }
 
 
 def create(window_id, callbacks):
-    labels = {}
-    geo = layout(WINDOW_SIZE)
-
-    labels["preset_button"] = add_button(
-        window_id, "OVR", 8, TITLE_SAFE_TOP, 44, BUTTON_H, callback=callbacks.get("preset")
-    )
-    labels["arm_button"] = add_button(
-        window_id, "ARM", 56, TITLE_SAFE_TOP, 44, BUTTON_H, callback=callbacks.get("arm")
-    )
-    labels["power_button"] = add_button(
-        window_id, "PWR", 104, TITLE_SAFE_TOP, 44, BUTTON_H, callback=callbacks.get("power")
-    )
-    labels["lap_button"] = add_button(
-        window_id, "LAP", 152, TITLE_SAFE_TOP, 44, BUTTON_H, callback=callbacks.get("lap")
-    )
-    labels["bsfc_button"] = add_button(
-        window_id, "BSFC", 200, TITLE_SAFE_TOP, 54, BUTTON_H, callback=callbacks.get("bsfc")
-    )
-    labels["debug_button"] = add_button(
-        window_id, "DBG", 260, TITLE_SAFE_TOP, 44, BUTTON_H, callback=callbacks.get("debug")
-    )
-
-    labels["hdr_summary"] = add_label(
-        window_id,
-        "Summary",
-        geo["left_x"],
-        geo["head_y"],
-        geo["col_w_left"],
-        16,
-        11,
-        "left",
-        (0.80, 0.92, 0.80, 1.0),
-    )
-    labels["hdr_live"] = add_label(
-        window_id,
-        "Live / Current",
-        geo["right_x"],
-        geo["head_y"],
-        geo["col_w_right"],
-        16,
-        11,
-        "left",
-        (0.80, 0.92, 0.80, 1.0),
-    )
-
-    _create_rows(labels, window_id, SUMMARY_ROWS, geo["left_x"], geo["top_y"], geo["col_w_left"], 0.67, 10)
-    _create_rows(labels, window_id, DETAIL_ROWS, geo["right_x"], geo["top_y"], geo["col_w_right"], 0.74, 9)
+    labels = {"window_id": window_id}
+    labels["power_button"] = add_button(window_id, "PWR", 0, 0, BUTTON_W, BUTTON_H, callback=callbacks.get("power"))
+    labels["lap_button"] = add_button(window_id, "LAP", 0, 0, BUTTON_W, BUTTON_H, callback=callbacks.get("lap"))
+    labels["bsfc_button"] = add_button(window_id, "BSFC", 0, 0, BUTTON_W + 10, BUTTON_H, callback=callbacks.get("bsfc"))
+    labels["debug_button"] = add_button(window_id, "DBG", 0, 0, BUTTON_W, BUTTON_H, callback=callbacks.get("debug"))
+    labels["run_id"] = add_label(window_id, "REV: ------", 0, 0, 92, 14, 9, "right", (1.0, 1.0, 0.8, 1.0))
+    labels["val_avg_econ"] = add_label(window_id, "---", 0, 0, 160, 36, 24, "center")
+    labels["val_pace_delta"] = add_label(window_id, "---", 0, 0, 170, 42, 30, "center")
+    labels["val_engine"] = add_label(window_id, "---", 0, 0, 120, 36, 24, "center")
+    _apply_layout(labels, WINDOW_SIZE)
     return labels
 
 
 def update(labels, state):
-    total_laps = int(state.vehicle.get("total_laps", 8))
-    values = {
-        "avg_econ": fmt_float(state.avg_fuel_econ_km_per_l, 2),
-        "avg_speed": fmt_float(state.avg_speed_kmh, 1),
-        "remaining": fmt_time_ms(state.time_remaining_s),
-        "pace_delta": fmt_sign(state.pace_delta_s, 1),
-        "fuel_used": fmt_float(state.measurement_fuel_used_ml, 1),
-        "laps": "{0}/{1}".format(int(state.laps_completed), total_laps),
-        "rpm": fmt_rpm(state.observed_rpm),
-        "gear": fmt_display_gear(state.display_gear),
-        "throttle": fmt_pct(state.observed_throttle * 100.0, 1),
-        "grade": fmt_pct(state.grade_smooth * 100.0, 2),
-        "engine": "ON" if state.observed_engine_on else "OFF",
-        "demand_load": fmt_pct(state.demand_load_ratio * 100.0, 1),
-        "current_bsfc": fmt_float(state.current_bsfc_display_g_per_kwh, 0),
-        "fuel_flow": fmt_float(state.current_fuel_flow_display_ml_s, 4, default="0.0000"),
-        "fuel_8lap": fmt_float(state.est_8lap_fuel_ml_display, 1),
-        "econ_8lap": fmt_float(state.est_8lap_econ_km_per_l_display, 2),
-        "net_energy": fmt_kj(state.net_energy_balance_j, 1),
-    }
+    size = tuple(state.ui_window_sizes.get("main", WINDOW_SIZE))
+    _apply_layout(labels, size)
 
-    for key, value in values.items():
-        set_text(labels["val_" + key], value)
+    econ_text = _fmt_kmpl(state.avg_fuel_econ_km_per_l)
+    pace_text = _fmt_pace_delta(state.pace_delta_s)
+    engine_text = "ON" if state.engine_on else "OFF"
 
-    set_color(labels["val_pace_delta"], pace_delta_color(state.pace_delta_s))
+    set_text(labels["val_avg_econ"], econ_text)
+    set_text(labels["val_pace_delta"], pace_text)
+    set_text(labels["val_engine"], engine_text)
 
-    set_text(labels["preset_button"], PRESET_ABBREV.get(state.ui_preset, "CST"))
-    manual_mode = str(state.measurement_start_mode) == "manual_arm_then_cross_sf"
-    set_visible(labels["arm_button"], manual_mode)
-    if manual_mode:
-        if state.measurement_active:
-            set_text(labels["arm_button"], "LIVE")
-            set_button_state(labels["arm_button"], True)
-        else:
-            set_text(labels["arm_button"], "ARM")
-            set_button_state(labels["arm_button"], state.measurement_armed)
+    set_color(labels["val_avg_econ"], _econ_color(state.avg_fuel_econ_km_per_l))
+    set_color(labels["val_pace_delta"], _pace_color(state.pace_delta_s))
+    set_color(labels["val_engine"], _engine_color(state.engine_on))
 
+    set_text(labels["run_id"], "REV: {0}".format(str(getattr(state, "build_id", "------"))))
+
+    set_text(labels["power_button"], "PWR")
+    set_text(labels["lap_button"], "LAP")
+    set_text(labels["bsfc_button"], "BSFC")
+    set_text(labels["debug_button"], "DBG")
     set_button_state(labels["power_button"], state.ui_show_power_window)
     set_button_state(labels["lap_button"], state.ui_show_lap_window)
     set_button_state(labels["bsfc_button"], state.ui_show_bsfc_window)
     set_button_state(labels["debug_button"], state.ui_show_debug_window)
 
 
-def _create_rows(labels, window_id, row_defs, x, y, col_w, label_frac, label_font_size):
-    label_w = int(col_w * label_frac)
-    value_w = col_w - label_w
-    value_x = x + label_w
+def render(state, window_size):
+    if not _AC_OK:
+        return
 
-    for idx, (key, title) in enumerate(row_defs):
-        row_y = y + idx * ROW_H
-        labels["lbl_" + key] = add_label(
-            window_id, title, x, row_y, label_w, ROW_H, label_font_size, "left"
-        )
-        labels["val_" + key] = add_label(
-            window_id, "---", value_x, row_y, value_w, ROW_H, FONT_VALUE, "right"
-        )
+    geo = layout(window_size)
+    x, y, w, h = geo["body_rect"]
+    if w <= 10 or h <= 10:
+        return
+
+    _draw_rect(x, y, w, h, (0.07, 0.09, 0.11, 0.78))
+    _draw_rect(x + 1, y + 1, w - 2, 4, (0.22, 0.25, 0.29, 0.25))
+    _draw_outline(x, y, w, h, (0.72, 0.76, 0.82, 0.18))
+
+    for idx, key in enumerate(("avg_econ", "pace_delta", "engine")):
+        rx, ry, rw, rh = geo["value_rects"][key]
+        if idx < 2:
+            divider_x = rx + rw
+            _draw_line(divider_x, ry + 4, divider_x, ry + rh - 4, (0.78, 0.82, 0.88, 0.14))
+        if key == "engine":
+            accent = _engine_color(state.engine_on)
+            _draw_rect(rx + 10, ry + 8, rw - 20, rh - 16, (accent[0], accent[1], accent[2], 0.11))
+            _draw_outline(rx + 10, ry + 8, rw - 20, rh - 16, (accent[0], accent[1], accent[2], 0.28))
+
+
+def _apply_layout(labels, size):
+    geo = layout(size)
+    move(labels["power_button"], geo["buttons"]["power"][0], geo["buttons"]["power"][1], BUTTON_W, BUTTON_H)
+    move(labels["lap_button"], geo["buttons"]["lap"][0], geo["buttons"]["lap"][1], BUTTON_W, BUTTON_H)
+    move(labels["bsfc_button"], geo["buttons"]["bsfc"][0], geo["buttons"]["bsfc"][1], BUTTON_W + 10, BUTTON_H)
+    move(labels["debug_button"], geo["buttons"]["debug"][0], geo["buttons"]["debug"][1], BUTTON_W, BUTTON_H)
+    move(labels["run_id"], int(size[0] - 100), 8, 92, 14)
+
+    for key in ("avg_econ", "pace_delta", "engine"):
+        rect = geo["value_rects"][key]
+        move(labels["val_" + key], int(rect[0]), int(rect[1] + rect[3] * 0.18), int(rect[2]), int(rect[3] * 0.64))
+
+
+def _fmt_kmpl(value):
+    if value is None:
+        return "---"
+    return "{0} km/L".format(fmt_float(value, 1))
+
+
+def _fmt_pace_delta(value):
+    if value is None:
+        return "---"
+    return "{0} s".format(fmt_sign(value, 1))
+
+
+def _econ_color(value):
+    if value is None:
+        return (0.95, 0.95, 0.95, 1.0)
+    if value >= 550.0:
+        return (0.30, 1.00, 0.30, 1.0)
+    if value >= 350.0:
+        return (1.00, 0.92, 0.25, 1.0)
+    return (1.00, 0.45, 0.45, 1.0)
+
+
+def _pace_color(value):
+    if value is None:
+        return (0.95, 0.95, 0.95, 1.0)
+    if value > 10.0:
+        return (0.30, 1.00, 0.30, 1.0)
+    if value < -5.0:
+        return (1.00, 0.40, 0.40, 1.0)
+    return (1.00, 1.00, 0.30, 1.0)
+
+
+def _engine_color(engine_on):
+    return (0.30, 1.00, 0.40, 1.0) if engine_on else (1.00, 0.40, 0.40, 1.0)
+
+
+def _draw_rect(x, y, w, h, color):
+    ac.glColor4f(color[0], color[1], color[2], color[3])
+    ac.glBegin(_GL_QUADS)
+    ac.glVertex2f(x, y)
+    ac.glVertex2f(x + w, y)
+    ac.glVertex2f(x + w, y + h)
+    ac.glVertex2f(x, y + h)
+    ac.glEnd()
+
+
+def _draw_outline(x, y, w, h, color):
+    _draw_line(x, y, x + w, y, color)
+    _draw_line(x, y + h, x + w, y + h, color)
+    _draw_line(x, y, x, y + h, color)
+    _draw_line(x + w, y, x + w, y + h, color)
+
+
+def _draw_line(x0, y0, x1, y1, color):
+    ac.glColor4f(color[0], color[1], color[2], color[3])
+    ac.glBegin(_GL_LINES)
+    ac.glVertex2f(x0, y0)
+    ac.glVertex2f(x1, y1)
+    ac.glEnd()
