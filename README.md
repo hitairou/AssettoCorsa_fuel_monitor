@@ -101,11 +101,13 @@ should not be public.
 
 ## Power Graph Diagnostics
 
-When validating Power graph runtime behavior, check:
+Power graph diagnostics are hidden during normal use. To validate renderer
+internals, set `power_graph_debug_overlay = 1` or `debug_mode = 1` in
+`config/strategy.ini`, then check:
 
 1. Main HUD `REV` changes after Power renderer edits.
-2. Power window shows `GREV: power-graph-runtime-proof-001`.
-3. Power graph test lines cover the full graph area.
+2. Power window shows the `GREV` line.
+3. Power graph test lines cover the full graph area when overlay is enabled.
 4. `histE` increases over time and stays near the expected rolling length.
 5. `last` and `cur` values match the bar display closely.
 6. `pts` is at least 2 and the last history point and current point are near the right edge.

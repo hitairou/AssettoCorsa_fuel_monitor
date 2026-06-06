@@ -39,18 +39,16 @@ def _draw_power_bar(state, rect):
     ac.glEnd()
 
     row_gap = 2.0
-    row_h = max((h - 10.0 - row_gap * 6.0) / 7.0, 6.0)
+    row_h = max((h - 10.0 - row_gap * 4.0) / 5.0, 6.0)
     row_y = y + 5.0
     power_scale = max(float(getattr(state, "power_graph_scale_w", POWER_SCALE)), 500.0)
 
     rows = [
         (state.demand_wheel_power_w, 0.9, 0.9, 0.2),
-        (max(state.demand_accel_power_w, 0.0), 1.0, 0.6, 0.2),
-        (max(state.demand_grade_power_w, 0.0), 1.0, 0.4, 0.9),
+        (state.demand_accel_power_w, 1.0, 0.6, 0.2),
+        (state.demand_grade_power_w, 1.0, 0.4, 0.9),
         (-state.demand_roll_power_w, 0.3, 1.0, 0.3),
         (-state.demand_aero_power_w, 0.3, 0.8, 1.0),
-        (min(state.demand_accel_power_w, 0.0), 1.0, 0.6, 0.2),
-        (min(state.demand_grade_power_w, 0.0), 1.0, 0.4, 0.9),
     ]
 
     for power_w, r, g, b in rows:

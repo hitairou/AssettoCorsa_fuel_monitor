@@ -14,6 +14,8 @@ class AppState(object):
         self.observed_speed_kmh = 0.0
         self.observed_speed_ms = 0.0
         self.observed_rpm = 0
+        self.raw_engine_rpm = 0
+        self.model_engine_rpm = 0.0
         self.raw_gear = 0
         self.display_gear = 0
         self.observed_throttle = 0.0
@@ -130,12 +132,15 @@ class AppState(object):
         self.measurement_start_session_time_s = 0.0
         self.measurement_start_abs_dist_m = 0.0
         self.measurement_started_at_sf = False
+        self.measurement_auto_suppressed = False
+        self.measurement_auto_start_ref_dist_m = None
 
         self.avg_fuel_econ_km_per_l = None
         self.avg_speed_kmh = None
         self.time_remaining_s = None
         self.pace_delta_s = None
         self.cumul_fuel_ml = 0.0
+        self.fuel_audit = {}
         self.last_render_error = ""
 
         self.estimated_km_per_l = 0.0

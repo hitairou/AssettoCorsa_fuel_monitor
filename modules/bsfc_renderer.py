@@ -230,7 +230,7 @@ def _draw_current_point(state, rect):
     if load is None:
         return
 
-    px = _rpm_to_px(float(state.observed_rpm), rect)
+    px = _rpm_to_px(float(getattr(state, "model_engine_rpm", state.observed_rpm)), rect)
     py = _load_to_py(float(load), rect)
     size = 7.0
 

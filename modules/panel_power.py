@@ -28,12 +28,10 @@ LEGEND = [
 
 POWER_ROWS = [
     ("wheel", "Wheel Demand"),
-    ("accel_pos", "Accel +"),
-    ("grade_pos", "Grade +"),
+    ("accel", "Accel"),
+    ("grade", "Grade"),
     ("roll", "Roll"),
     ("aero", "Aero"),
-    ("accel_neg", "Accel -"),
-    ("grade_neg", "Grade -"),
 ]
 
 
@@ -46,10 +44,11 @@ def layout(window_size):
     bar_graph_w = width - bar_graph_x - PADDING - BAR_VALUE_W - BAR_GAP
     legend_y = graph_y + GRAPH_H + AXIS_H + 8
     bar_y = legend_y + 18
-    estore_y = bar_y + (7 * ROW_H + 6 * ROW_GAP + 10) + 12
+    bar_h = 5 * ROW_H + 4 * ROW_GAP + 10
+    estore_y = bar_y + bar_h + 12
     return {
         "graph_rect": (graph_x, graph_y, graph_w, GRAPH_H),
-        "bar_rect": (bar_graph_x, bar_y, bar_graph_w, 7 * ROW_H + 6 * ROW_GAP + 10),
+        "bar_rect": (bar_graph_x, bar_y, bar_graph_w, bar_h),
         "estore_rect": (bar_graph_x, estore_y, bar_graph_w, 22),
         "graph_x": graph_x,
         "graph_y": graph_y,
@@ -120,12 +119,10 @@ def create(window_id):
 def update(labels, state):
     values = {
         "wheel": state.demand_wheel_power_w,
-        "accel_pos": max(state.demand_accel_power_w, 0.0),
-        "grade_pos": max(state.demand_grade_power_w, 0.0),
+        "accel": state.demand_accel_power_w,
+        "grade": state.demand_grade_power_w,
         "roll": state.demand_roll_power_w,
         "aero": state.demand_aero_power_w,
-        "accel_neg": abs(min(state.demand_accel_power_w, 0.0)),
-        "grade_neg": abs(min(state.demand_grade_power_w, 0.0)),
     }
 
     for key, value in values.items():
@@ -140,37 +137,51 @@ def update(labels, state):
     else:
         set_color(labels["val_estore"], (1.0, 0.45, 0.45, 1.0))
 
-    graph_diag = getattr(state, "graph_renderer_diag", {})
-    engine_diag = graph_diag.get("hist_engine", {})
-    accel_diag = graph_diag.get("hist_accel", {})
-    set_text(labels["diag_rev"], "GREV: {0}".format(graph_renderer.GRAPH_RENDERER_REV))
-    set_text(
-        labels["diag_hist"],
-        "epoch={0} histE={1} last={2} cur={3} pts={4} err={5} | histA={6} last={7} cur={8} pts={9} err={10}".format(
-            getattr(state, "power_history_epoch", 0),
-            len(state.hist_engine),
-            state.hist_engine.to_list()[-1] if len(state.hist_engine) else "",
-            state.current_P_engine,
-            engine_diag.get("points_count", ""),
-            engine_diag.get("error", ""),
-            len(state.hist_accel),
-            state.hist_accel.to_list()[-1] if len(state.hist_accel) else "",
-            state.current_P_accel_term,
-            accel_diag.get("points_count", ""),
-            accel_diag.get("error", ""),
-        ),
+    if _show_power_diag(state):
+        graph_diag = getattr(state, "graph_renderer_diag", {})
+        engine_diag = graph_diag.get("hist_engine", {})
+        accel_diag = graph_diag.get("hist_accel", {})
+        set_text(labels["diag_rev"], "GREV: {0}".format(graph_renderer.GRAPH_RENDERER_REV))
+        set_text(
+            labels["diag_hist"],
+            "epoch={0} histE={1} last={2} cur={3} pts={4} err={5} | histA={6} last={7} cur={8} pts={9} err={10}".format(
+                getattr(state, "power_history_epoch", 0),
+                len(state.hist_engine),
+                state.hist_engine.to_list()[-1] if len(state.hist_engine) else "",
+                state.current_P_engine,
+                engine_diag.get("points_count", ""),
+                engine_diag.get("error", ""),
+                len(state.hist_accel),
+                state.hist_accel.to_list()[-1] if len(state.hist_accel) else "",
+                state.current_P_accel_term,
+                accel_diag.get("points_count", ""),
+                accel_diag.get("error", ""),
+            ),
+        )
+        set_text(
+            labels["diag_state"],
+            "lastH={0} curP={1} err={2} render={3}".format(
+                engine_diag.get("last_history_point", ""),
+                engine_diag.get("current_point", ""),
+                engine_diag.get("error", ""),
+                getattr(state, "last_render_error", ""),
+            ),
+        )
+    else:
+        set_text(labels["diag_rev"], "")
+        set_text(labels["diag_hist"], "")
+        set_text(labels["diag_state"], "")
+
+
+def _show_power_diag(state):
+    strategy = getattr(state, "strategy", {}) or {}
+    return _cfg_bool(strategy.get("debug_mode", 0)) or _cfg_bool(
+        strategy.get("power_graph_debug_overlay", 0)
     )
-    set_text(
-        labels["diag_state"],
-        "lastH={0} curP={1} err={2} render={3} append_t={4} histE={5}/{6} histA={7}/{8}".format(
-            engine_diag.get("last_history_point", ""),
-            engine_diag.get("current_point", ""),
-            engine_diag.get("error", ""),
-            getattr(state, "last_render_error", ""),
-            getattr(state, "power_hist_debug", {}).get("append_time", ""),
-            getattr(state, "power_hist_debug", {}).get("hist_engine_len", ""),
-            getattr(state, "power_hist_debug", {}).get("hist_engine_last", ""),
-            getattr(state, "power_hist_debug", {}).get("hist_accel_len", ""),
-            getattr(state, "power_hist_debug", {}).get("hist_accel_last", ""),
-        ),
-    )
+
+
+def _cfg_bool(value):
+    try:
+        return bool(int(value))
+    except Exception:
+        return str(value).strip().lower() in ("true", "yes", "on")

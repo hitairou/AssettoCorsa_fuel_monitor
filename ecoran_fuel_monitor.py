@@ -61,6 +61,7 @@ _last_update_error = None
 _last_bsfc_diag_log_s = -1.0
 _last_bsfc_trace_log_s = -1.0
 _last_runtime_diag_log_s = -1.0
+_last_fuel_audit_log_s = -1.0
 
 _LOG_DIR = os.environ.get("TEMP", _APP_DIR)
 _LOG_FILE = os.path.join(_LOG_DIR, "ecoran_fuel_monitor_debug.txt")
@@ -176,6 +177,8 @@ def _compute_build_id():
         os.path.join(_APP_DIR, "modules", "history_buffers.py"),
         os.path.join(_APP_DIR, "modules", "bsfc_renderer.py"),
         os.path.join(_APP_DIR, "modules", "window_manager.py"),
+        os.path.join(_APP_DIR, "config", "strategy.ini"),
+        os.path.join(_APP_DIR, "config", "vehicle.ini"),
     )
     digest = hashlib.sha1()
     for path in files:
@@ -233,6 +236,44 @@ def _detect_engine(rpm, display_gear, strategy):
     return rpm > on_thr
 
 
+def _clamp(value, min_value, max_value):
+    return max(float(min_value), min(float(max_value), float(value)))
+
+
+def _telemetry_clamped_rpm(strategy):
+    rpm_min = float(strategy.get("engine_rpm_min", 800.0))
+    rpm_max = float(strategy.get("engine_rpm_max", 7500.0))
+    return _clamp(state.observed_rpm, rpm_min, rpm_max)
+
+
+def _compute_model_engine_rpm(vehicle, strategy):
+    source = str(strategy.get("engine_rpm_source", vehicle.get("engine_rpm_source", "calculated"))).strip().lower()
+    rpm_min = float(strategy.get("engine_rpm_min", vehicle.get("engine_rpm_min", 800.0)))
+    rpm_max = float(strategy.get("engine_rpm_max", vehicle.get("engine_rpm_max", 7500.0)))
+    if source == "telemetry":
+        return float(state.observed_rpm)
+    if source == "telemetry_clamped":
+        return _clamp(state.observed_rpm, rpm_min, rpm_max)
+
+    if source != "calculated":
+        source = "calculated"
+
+    gear = int(state.raw_gear)
+    gear_ratio = float(vehicle.get("gear_{0}".format(gear), 0.0))
+    speed_ms = max(float(state.observed_speed_ms), 0.0)
+    if source == "calculated" and gear > 0 and gear_ratio > 0.0:
+        if speed_ms < 0.05:
+            return rpm_min
+        circ = max(float(vehicle.get("rear_tire_circumference_m", 1.5)), 1e-6)
+        primary = float(vehicle.get("primary_ratio", 4.058))
+        secondary = float(vehicle.get("secondary_ratio", 2.944))
+        wheel_rpm = (speed_ms / circ) * 60.0
+        rpm = wheel_rpm * primary * gear_ratio * secondary
+        return _clamp(rpm, rpm_min, rpm_max)
+
+    return _clamp(state.observed_rpm, rpm_min, rpm_max)
+
+
 def _reset_lap_accumulators():
     state.current_lap_E_engine_j = 0.0
     state.current_lap_E_roll_j = 0.0
@@ -251,6 +292,8 @@ def _start_measurement_session(abs_dist_m, at_sf):
 
     state.measurement_active = True
     state.measurement_armed = False
+    state.measurement_auto_suppressed = False
+    state.measurement_auto_start_ref_dist_m = None
     state.measurement_started_at_sf = bool(at_sf)
     state.measurement_start_session_time_s = _elapsed_time_s
     state.measurement_start_abs_dist_m = float(abs_dist_m)
@@ -280,15 +323,38 @@ def _start_measurement_session(abs_dist_m, at_sf):
     )
 
 
+def _stop_measurement_session(manual=False):
+    state.measurement_active = False
+    state.measurement_armed = False
+    if manual:
+        state.measurement_auto_suppressed = True
+    try:
+        _lap_tracker.stop_measurement()
+    except Exception:
+        pass
+
+
 def _update_measurement_state(lap_event, vehicle):
     mode = str(state.strategy.get("measurement_start_mode", "first_cross_sf")).strip()
-    if mode not in ("session_start", "first_cross_sf", "manual_arm_then_cross_sf"):
+    if mode not in ("session_start", "first_cross_sf", "manual_arm_then_cross_sf", "auto_drive_start"):
         mode = "first_cross_sf"
     state.measurement_start_mode = mode
 
     if not state.measurement_active:
         if mode == "session_start":
             _start_measurement_session(state.session_dist_m, at_sf=False)
+        elif mode == "auto_drive_start":
+            if state.measurement_auto_start_ref_dist_m is None:
+                state.measurement_auto_start_ref_dist_m = float(state.session_dist_m)
+            moved_m = max(
+                float(state.session_dist_m) - float(state.measurement_auto_start_ref_dist_m),
+                0.0,
+            )
+            speed_ok = float(state.observed_speed_kmh) >= float(state.strategy.get("auto_start_speed_kmh", 1.0))
+            dist_ok = moved_m >= float(state.strategy.get("auto_start_min_distance_m", 1.0))
+            engine_ok = (not _cfg_bool(state.strategy.get("auto_start_engine_required", 0), False)) or state.engine_on
+            if (not state.measurement_auto_suppressed) and engine_ok and (speed_ok or dist_ok):
+                _start_measurement_session(state.session_dist_m, at_sf=False)
         elif lap_event["sf_crossed"]:
             if mode == "first_cross_sf":
                 _start_measurement_session(lap_event["cross_abs_dist_m"], at_sf=True)
@@ -321,6 +387,8 @@ def _update_measurement_state(lap_event, vehicle):
         state.est_8lap_econ_km_per_l_display = None
         if mode == "manual_arm_then_cross_sf" and not state.measurement_armed:
             state.est_8lap_source = "waiting_for_arm"
+        elif mode == "auto_drive_start":
+            state.est_8lap_source = "waiting_for_drive_start"
         else:
             state.est_8lap_source = "waiting_for_first_cross"
         state.est_8lap_fuel_ml = 0.0
@@ -504,13 +572,19 @@ def acUpdate(delta_t):
 
         if not state.prev_sim_info_ok:
             _clear_power_history("sim reconnect")
+            state.measurement_auto_suppressed = False
+            state.measurement_auto_start_ref_dist_m = None
             state.prev_sim_info_ok = True
 
         if state.raw_distance_traveled + 5.0 < float(getattr(state, "prev_dist_traveled", 0.0)):
             _clear_power_history("distance rollback")
+            state.measurement_auto_suppressed = False
+            state.measurement_auto_start_ref_dist_m = None
 
         if state.observed_lap_count < int(getattr(state, "prev_observed_lap_count", 0)):
             _clear_power_history("lap count rollback")
+            state.measurement_auto_suppressed = False
+            state.measurement_auto_start_ref_dist_m = None
 
         stage = "main update"
         state.accum_t += dt
@@ -564,15 +638,17 @@ def acUpdate(delta_t):
 
 
 def _main_update(dt):
-    global _last_bsfc_diag_log_s, _last_bsfc_trace_log_s
+    global _last_bsfc_diag_log_s, _last_bsfc_trace_log_s, _last_fuel_audit_log_s
 
     strategy = state.strategy
     vehicle = state.vehicle
 
+    state.raw_engine_rpm = state.observed_rpm
     gear_display_offset = int(strategy.get("gear_display_offset", -1))
     state.display_gear = apply_gear_display_offset(state.raw_gear, gear_display_offset)
     if state.display_gear is None:
         state.display_gear = 0
+    state.model_engine_rpm = _compute_model_engine_rpm(vehicle, strategy)
 
     v_ms = state.observed_speed_ms
     v_smooth = _speed_ma.update(v_ms)
@@ -628,7 +704,7 @@ def _main_update(dt):
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
         max(F_req, 0.0),
-        state.observed_rpm,
+        state.model_engine_rpm,
         vehicle,
         engaged_raw_gear,
         lambda rpm: _tmax_lookup.query(rpm),
@@ -637,7 +713,7 @@ def _main_update(dt):
     state.demand_load_ratio = demand_load
 
     demand_bsfc = low_load_correction(
-        _bsfc_interp.query(state.observed_rpm, demand_load),
+        _bsfc_interp.query(state.model_engine_rpm, demand_load),
         demand_load,
     )
     state.demand_bsfc_g_per_kwh = demand_bsfc
@@ -663,20 +739,20 @@ def _main_update(dt):
     bsfc_demand_engine_power_w = max(bsfc_P_wheel / max(eta_d, 1e-9), 0.0)
     _, _, bsfc_load = calc_load(
         max(bsfc_F_req, 0.0),
-        state.observed_rpm,
+        state.model_engine_rpm,
         vehicle,
         engaged_raw_gear,
         lambda rpm: _tmax_lookup.query(rpm),
     )
     bsfc_bsfc = low_load_correction(
-        _bsfc_interp.query(state.observed_rpm, bsfc_load),
+        _bsfc_interp.query(state.model_engine_rpm, bsfc_load),
         bsfc_load,
     )
     bsfc_mf_dot, bsfc_vf_dot = compute_fuel_flow(
         bsfc_bsfc, bsfc_demand_engine_power_w, fuel_density
     )
 
-    engine_point_valid = state.engine_on and state.observed_rpm >= 100
+    engine_point_valid = state.engine_on and state.model_engine_rpm >= 100
     if engine_point_valid:
         state.current_bsfc_display_g_per_kwh = bsfc_bsfc
         state.current_load_display_ratio = bsfc_load
@@ -687,7 +763,7 @@ def _main_update(dt):
         state.current_fuel_flow_display_ml_s = 0.0
 
     if engine_point_valid:
-        state.bsfc_trace_rpm.append(float(state.observed_rpm))
+        state.bsfc_trace_rpm.append(float(state.model_engine_rpm))
         state.bsfc_trace_load.append(float(bsfc_load))
 
     if state.engine_on:
@@ -760,16 +836,33 @@ def _main_update(dt):
 
     state.power_graph_scale_w, state.power_graph_peak_power_w, state.power_graph_scale_raw_w = _power_graph_scale_from_state(state, strategy)
     state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)
+    state.fuel_audit = {
+        "t": _elapsed_time_s,
+        "dt": dt,
+        "engine_on": state.engine_on,
+        "observed_rpm": state.observed_rpm,
+        "model_rpm": state.model_engine_rpm,
+        "load": state.demand_load_ratio,
+        "bsfc": state.demand_bsfc_g_per_kwh,
+        "demand_engine_power_w": state.demand_engine_power_w,
+        "mf_dot_g_s": state.demand_fuel_mass_flow_g_s,
+        "vf_dot_ml_s": state.demand_fuel_flow_ml_s,
+        "cumul_fuel_ml": state.cumul_fuel_ml,
+        "measurement_fuel_used_ml": state.measurement_fuel_used_ml,
+        "measurement_dist_m": state.measurement_dist_m,
+        "avg_fuel_econ_km_per_l": state.avg_fuel_econ_km_per_l,
+    }
 
     state.first_update = False
 
     if _elapsed_time_s - _last_bsfc_diag_log_s >= 1.0:
         _last_bsfc_diag_log_s = _elapsed_time_s
         _log(
-            "BSFC diag t={0:.1f} engine_on={1} rpm={2} gear={3} load={4:.3f} trace={5} valid={6} obs_load={7} bsfc_load={8:.3f}".format(
+            "BSFC diag t={0:.1f} engine_on={1} raw_rpm={2} model_rpm={3:.0f} gear={4} load={5:.3f} trace={6} valid={7} obs_load={8} bsfc_load={9:.3f}".format(
                 _elapsed_time_s,
                 int(state.engine_on),
                 int(state.observed_rpm),
+                float(state.model_engine_rpm),
                 int(state.display_gear),
                 float(state.demand_load_ratio),
                 len(state.bsfc_trace_rpm),
@@ -800,11 +893,26 @@ def _main_update(dt):
                 "BSFC trace tail count={0} last={1} current={2:.0f}/{3:.3f}".format(
                     count,
                     " | ".join(tail),
-                    float(state.observed_rpm),
+                    float(state.model_engine_rpm),
                     float(bsfc_load),
                 ),
                 force=True,
             )
+
+    if _cfg_bool(state.strategy.get("debug_mode", 0), False) and _elapsed_time_s - _last_fuel_audit_log_s >= 1.0:
+        _last_fuel_audit_log_s = _elapsed_time_s
+        audit = dict(state.fuel_audit)
+        audit["avg_fuel_econ_km_per_l"] = (
+            "{0:.3f}".format(audit["avg_fuel_econ_km_per_l"])
+            if audit.get("avg_fuel_econ_km_per_l") is not None else "None"
+        )
+        _log(
+            "fuel audit t={t:.1f} dt={dt:.3f} engine_on={engine_on} observed_rpm={observed_rpm} model_rpm={model_rpm:.0f} "
+            "load={load:.3f} bsfc={bsfc:.1f} P_engine={demand_engine_power_w:.1f} mf_dot={mf_dot_g_s:.5f} "
+            "vf_dot={vf_dot_ml_s:.5f} cumul={cumul_fuel_ml:.4f} meas_fuel={measurement_fuel_used_ml:.4f} "
+            "meas_dist={measurement_dist_m:.2f} avg_kmpl={avg_fuel_econ_km_per_l}".format(**audit),
+            force=True,
+        )
 
     _log(
         "dt={0:.3f} rawGear={1} dispGear={2} engineOn={3} "

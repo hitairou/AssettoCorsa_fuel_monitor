@@ -5,7 +5,7 @@ from modules.display_format import fmt_display_gear, fmt_float, fmt_int, fmt_pct
 from modules.panel_common import add_label, set_text
 
 
-WINDOW_SIZE = (280, 220)
+WINDOW_SIZE = (300, 300)
 PADDING = 8
 ROW_H = 12
 TITLE_SAFE_TOP = 28
@@ -14,6 +14,7 @@ ROWS = [
     ("raw_gear", "Raw Gear"),
     ("display_gear", "Display Gear"),
     ("raw_rpm", "Raw RPM"),
+    ("model_rpm", "Model RPM"),
     ("grade_source", "Grade Source"),
     ("vert_idx", "Vertical Axis Index"),
     ("raw_coords", "Raw carCoordinates"),
@@ -22,6 +23,9 @@ ROWS = [
     ("demand_load", "Demand Load [%]"),
     ("demand_bsfc", "Demand BSFC [g/kWh]"),
     ("demand_fuel_flow", "Demand Fuel Flow [mL/s]"),
+    ("cumul_fuel", "Cumul Fuel [mL]"),
+    ("measurement_fuel", "Meas Fuel [mL]"),
+    ("avg_econ", "Avg Econ [km/L]"),
     ("estimate_source", "Estimate Source"),
     ("lap_progress", "Current Lap Progress [%]"),
     ("restart_count", "Session Restart Count"),
@@ -55,6 +59,7 @@ def update(labels, state):
         "raw_gear": fmt_int(state.raw_gear),
         "display_gear": fmt_display_gear(state.display_gear),
         "raw_rpm": fmt_rpm(state.observed_rpm),
+        "model_rpm": fmt_rpm(getattr(state, "model_engine_rpm", 0.0)),
         "grade_source": state.grade_source,
         "vert_idx": str(state.strategy.get("vertical_axis_index", 1)),
         "raw_coords": _fmt_vec3(state.raw_car_coordinates),
@@ -63,6 +68,9 @@ def update(labels, state):
         "demand_load": fmt_pct(state.demand_load_ratio * 100.0, 1),
         "demand_bsfc": fmt_float(state.demand_bsfc_g_per_kwh, 0),
         "demand_fuel_flow": fmt_float(state.demand_fuel_flow_ml_s, 4),
+        "cumul_fuel": fmt_float(state.cumul_fuel_ml, 3),
+        "measurement_fuel": fmt_float(state.measurement_fuel_used_ml, 3),
+        "avg_econ": fmt_float(state.avg_fuel_econ_km_per_l, 2),
         "estimate_source": str(state.est_8lap_source),
         "lap_progress": fmt_pct(state.current_lap_progress * 100.0, 1),
         "restart_count": str(state.session_restart_count),

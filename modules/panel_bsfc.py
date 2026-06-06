@@ -64,7 +64,9 @@ def update(labels, state):
     size = tuple(state.ui_window_sizes.get("bsfc", WINDOW_SIZE))
     _apply_layout(labels, size)
 
-    current_rpm = 0 if state.current_load_display_ratio is None else state.observed_rpm
+    current_rpm = 0 if state.current_load_display_ratio is None else getattr(
+        state, "model_engine_rpm", state.observed_rpm
+    )
     current_load = None
     if state.current_load_display_ratio is not None:
         current_load = state.current_load_display_ratio * 100.0
