@@ -408,6 +408,7 @@ def acUpdate(delta_t):
             state.accum_t = 0.0
 
         stage = "ui refresh"
+        state.build_id = _compute_build_id()
         update_windows(state)
         _last_update_error = None
     except Exception as exc:
