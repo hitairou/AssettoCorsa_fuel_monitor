@@ -498,9 +498,8 @@ def _main_update(dt):
         state.current_load_display_ratio = None
         state.current_fuel_flow_display_ml_s = 0.0
 
-    if engine_point_valid:
-        state.bsfc_trace_rpm.append(float(state.observed_rpm))
-        state.bsfc_trace_load.append(float(demand_load))
+    state.bsfc_trace_rpm.append(float(state.observed_rpm))
+    state.bsfc_trace_load.append(float(demand_load))
 
     if state.engine_on:
         state.cumul_fuel_ml = euler_step(state.cumul_fuel_ml, vf_dot, dt)
