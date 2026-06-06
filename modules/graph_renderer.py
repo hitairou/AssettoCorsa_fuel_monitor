@@ -15,7 +15,7 @@ except (ImportError, AttributeError):
 
 
 Y_MAX = 2000.0
-GRAPH_RENDERER_REV = "power-graph-runtime-proof-001"
+GRAPH_RENDERER_REV = "power-graph-history-epoch-002"
 SERIES = [
     ("hist_engine", "current_P_engine", 1.0, 1.0, 1.0),
     ("hist_roll", "current_P_roll", 0.3, 1.0, 0.3),
@@ -37,7 +37,8 @@ def draw(state, rect):
     scale = max(float(getattr(state, "power_graph_scale_w", Y_MAX)), 1.0)
     _draw_background(x, y, w, h)
     _draw_grid(x, y, w, h, scale)
-    _draw_test_frame(x, y, w, h, scale)
+    if _debug_overlay_enabled(state):
+        _draw_test_frame(x, y, w, h, scale)
     _draw_series(state, x, y, w, h, scale)
 
 
@@ -108,19 +109,18 @@ def _draw_series(state, x, y, w, h, scale):
             valid_values.append(float(value))
 
         count = len(valid_values)
+        capacity = max(int(getattr(buf, "_maxlen", max(count, 1))), 1)
         current_x = _current_x(x, w)
         live_gap = min(max(8.0, w * 0.02), 12.0)
-        history_width = max(current_x - live_gap - x, 1.0)
         history_right_x = max(current_x - live_gap, x)
+        history_width = max(history_right_x - x, 1.0)
+        dx = history_width / max(capacity - 1, 1)
+        start_x = history_right_x - dx * max(count - 1, 0)
 
-        if count == 1:
-            points.append((history_right_x, _power_to_clamped_py(valid_values[0], y, h, scale)))
-        elif count > 1:
-            denom = float(count - 1)
-            for idx, value in enumerate(valid_values):
-                px = x + (float(idx) / denom) * history_width
-                py = _power_to_clamped_py(value, y, h, scale)
-                points.append((px, py))
+        for idx, value in enumerate(valid_values):
+            px = start_x + dx * idx
+            py = _power_to_clamped_py(value, y, h, scale)
+            points.append((px, py))
 
         current_value = _to_float_or_none(getattr(state, current_attr, None))
         current_point = None
@@ -167,6 +167,9 @@ def _draw_series(state, x, y, w, h, scale):
             "first_point": points[0] if points else None,
             "last_history_point": points[-1] if points else None,
             "current_point": current_point,
+            "history_capacity": capacity,
+            "history_start_x": start_x,
+            "current_x": current_x,
             "history_width": history_width,
             "graph_rect": (x, y, w, h),
             "scale": scale,
@@ -182,6 +185,15 @@ def _draw_series(state, x, y, w, h, scale):
 def _current_x(x, width):
     dot_radius = 2.2
     return x + max(width - dot_radius - 1.0, 0.0)
+
+
+def _debug_overlay_enabled(state):
+    strategy = getattr(state, "strategy", {}) or {}
+    value = strategy.get("power_graph_debug_overlay", 0)
+    try:
+        return bool(int(value))
+    except Exception:
+        return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _power_to_py(power_w, y, height, scale):

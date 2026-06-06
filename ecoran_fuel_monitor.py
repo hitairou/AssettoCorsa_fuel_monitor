@@ -187,6 +187,43 @@ def _compute_build_id():
     return digest.hexdigest()[:6].upper()
 
 
+def _clear_power_history(reason=""):
+    for attr in (
+        "hist_engine",
+        "hist_roll",
+        "hist_aero",
+        "hist_accel",
+        "hist_grade",
+        "hist_power_time",
+    ):
+        buf = getattr(state, attr, None)
+        if buf is not None and hasattr(buf, "clear"):
+            try:
+                buf.clear()
+            except Exception:
+                pass
+
+    trace = getattr(state, "power_trace_samples", None)
+    if trace is not None and hasattr(trace, "clear"):
+        try:
+            trace.clear()
+        except Exception:
+            pass
+
+    state.graph_renderer_diag = {}
+    state.power_hist_debug = {}
+    state.last_render_error = ""
+    state.power_history_epoch = int(getattr(state, "power_history_epoch", 0)) + 1
+    if reason:
+        _log(
+            "power history cleared reason={0} epoch={1}".format(
+                reason,
+                state.power_history_epoch,
+            ),
+            force=True,
+        )
+
+
 def _detect_engine(rpm, display_gear, strategy):
     on_thr = int(strategy.get("rpm_on_threshold", 800))
     off_thr = int(strategy.get("rpm_off_threshold", 500))
@@ -462,7 +499,18 @@ def acUpdate(delta_t):
         update_sim_info()
         read_telemetry()
         if not state.sim_info_ok:
+            state.prev_sim_info_ok = False
             return
+
+        if not state.prev_sim_info_ok:
+            _clear_power_history("sim reconnect")
+            state.prev_sim_info_ok = True
+
+        if state.raw_distance_traveled + 5.0 < float(getattr(state, "prev_dist_traveled", 0.0)):
+            _clear_power_history("distance rollback")
+
+        if state.observed_lap_count < int(getattr(state, "prev_observed_lap_count", 0)):
+            _clear_power_history("lap count rollback")
 
         stage = "main update"
         state.accum_t += dt
@@ -484,27 +532,30 @@ def acUpdate(delta_t):
             engine_meta = graph_diag.get("hist_engine", {})
             accel_meta = graph_diag.get("hist_accel", {})
             _log(
-                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine_len={3} hist_engine_last={4} cur_P_engine={5} "
-                "hist_accel_len={6} hist_accel_last={7} cur_P_accel={8} scale={9:.1f} points={10} last_hist={11} current={12} "
-                "graph_err={13} last_render={14}".format(
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} epoch={3} hist_engine_len={4} hist_engine_last={5} cur_P_engine={6} "
+                "hist_accel_len={7} hist_accel_last={8} cur_P_accel={9} scale={10:.1f} points={11} last_hist={12} current={13} "
+                "graph_err={14} last_render={15}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
+                    int(getattr(state, "power_history_epoch", 0)),
                     len(state.hist_engine),
-                    engine_meta.get("hist_last"),
+                    engine_meta.get("last_value"),
                     state.current_P_engine,
                     len(state.hist_accel),
-                    accel_meta.get("hist_last"),
+                    accel_meta.get("last_value"),
                     state.current_P_accel_term,
                     float(getattr(state, "power_graph_scale_w", 0.0)),
                     engine_meta.get("points_count"),
-                    engine_meta.get("hist_last"),
+                    engine_meta.get("last_history_point"),
                     engine_meta.get("current_point"),
                     engine_meta.get("error") or accel_meta.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
                 force=True,
             )
+        state.prev_dist_traveled = float(state.raw_distance_traveled)
+        state.prev_observed_lap_count = int(state.observed_lap_count)
     except Exception as exc:
         err_sig = "{0}: {1}".format(type(exc).__name__, exc)
         if err_sig != _last_update_error:
@@ -552,6 +603,7 @@ def _main_update(dt):
             state.current_lap_restart_count += 1
         if _bsfc_accel_deriv is not None:
             _bsfc_accel_deriv.reset()
+        _clear_power_history("engine start")
 
     (F_req, P_wheel, theta,
      P_roll, P_aero, P_accel_t, P_grade_t) = calc_forces(
@@ -572,25 +624,6 @@ def _main_update(dt):
 
     net_energy_rate_w = demand_engine_power_w - P_roll - P_aero - P_accel_t - P_grade_t
     state.net_energy_balance_j += net_energy_rate_w * dt
-
-    state.hist_engine.append(demand_engine_power_w)
-    state.hist_roll.append(P_roll)
-    state.hist_aero.append(P_aero)
-    state.hist_accel.append(P_accel_t)
-    state.hist_grade.append(P_grade_t)
-    state.power_hist_debug = {
-        "append_time": _elapsed_time_s,
-        "hist_engine_len": len(state.hist_engine),
-        "hist_engine_last": demand_engine_power_w,
-        "hist_roll_len": len(state.hist_roll),
-        "hist_roll_last": P_roll,
-        "hist_aero_len": len(state.hist_aero),
-        "hist_aero_last": P_aero,
-        "hist_accel_len": len(state.hist_accel),
-        "hist_accel_last": P_accel_t,
-        "hist_grade_len": len(state.hist_grade),
-        "hist_grade_last": P_grade_t,
-    }
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
@@ -704,6 +737,26 @@ def _main_update(dt):
     state.current_P_grade_term = state.demand_grade_power_w
     state.current_P_engine = state.demand_engine_power_w
     state.current_E_store = state.net_energy_balance_j
+
+    state.hist_engine.append(state.current_P_engine)
+    state.hist_roll.append(state.current_P_roll)
+    state.hist_aero.append(state.current_P_aero)
+    state.hist_accel.append(state.current_P_accel_term)
+    state.hist_grade.append(state.current_P_grade_term)
+    state.power_hist_debug = {
+        "append_time": _elapsed_time_s,
+        "power_history_epoch": int(getattr(state, "power_history_epoch", 0)),
+        "hist_engine_len": len(state.hist_engine),
+        "hist_engine_last": state.current_P_engine,
+        "hist_roll_len": len(state.hist_roll),
+        "hist_roll_last": state.current_P_roll,
+        "hist_aero_len": len(state.hist_aero),
+        "hist_aero_last": state.current_P_aero,
+        "hist_accel_len": len(state.hist_accel),
+        "hist_accel_last": state.current_P_accel_term,
+        "hist_grade_len": len(state.hist_grade),
+        "hist_grade_last": state.current_P_grade_term,
+    }
 
     state.power_graph_scale_w, state.power_graph_peak_power_w, state.power_graph_scale_raw_w = _power_graph_scale_from_state(state, strategy)
     state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)

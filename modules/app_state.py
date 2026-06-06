@@ -106,6 +106,7 @@ class AppState(object):
 
         self.power_graph_scale_w = 2000.0
         self.net_energy_balance_scale_j = 5000.0
+        self.power_history_epoch = 0
 
         # ------------------------------------------------------------------
         # Aggregate / cumulative session values
@@ -189,6 +190,7 @@ class AppState(object):
         self.prev_height = 0.0
         self.prev_speed_ms = 0.0
         self.prev_session_dist_m = 0.0
+        self.prev_observed_lap_count = 0
 
         # ------------------------------------------------------------------
         # Update accumulator
@@ -223,6 +225,7 @@ class AppState(object):
         # Shared memory availability
         # ------------------------------------------------------------------
         self.sim_info_ok = False
+        self.prev_sim_info_ok = False
 
 
 state = AppState()
