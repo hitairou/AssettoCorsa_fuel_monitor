@@ -1,5 +1,5 @@
 # modules/bsfc_renderer.py
-# GL renderer for BSFC heatmap, trace, current point, and gear candidates.
+# GL renderer for BSFC heatmap, current point, and 10-second trace.
 
 import math
 
@@ -71,18 +71,16 @@ def draw(state, rect):
     if w <= 4 or h <= 4:
         return
 
-    dim = 1.0 if state.engine_on else 0.38
-    _draw_background(rect, dim)
-    _draw_heatmap(rect, dim)
-    _draw_grid(rect, dim)
-    _draw_trace(state, rect, dim)
-    _draw_gear_candidates(state, rect, dim)
-    _draw_current_point(state, rect, dim)
+    _draw_background(rect)
+    _draw_heatmap(rect)
+    _draw_grid(rect)
+    _draw_trace(state, rect)
+    _draw_current_point(state, rect)
 
 
-def _draw_background(rect, dim):
+def _draw_background(rect):
     x, y, w, h = rect
-    ac.glColor4f(0.06, 0.06, 0.06, 0.88 * dim + 0.10)
+    ac.glColor4f(0.06, 0.06, 0.06, 0.88)
     ac.glBegin(_GL_QUADS)
     ac.glVertex2f(x, y)
     ac.glVertex2f(x + w, y)
@@ -91,13 +89,13 @@ def _draw_background(rect, dim):
     ac.glEnd()
 
 
-def _draw_heatmap(rect, dim):
+def _draw_heatmap(rect):
     for rpm0, rpm1, load0, load1, r, g, b in _bg_cells:
         x0 = _rpm_to_px(rpm0, rect)
         x1 = _rpm_to_px(rpm1, rect)
         y0 = _load_to_py(load1, rect)
         y1 = _load_to_py(load0, rect)
-        ac.glColor4f(r, g, b, 0.58 * dim)
+        ac.glColor4f(r, g, b, 0.58)
         ac.glBegin(_GL_QUADS)
         ac.glVertex2f(x0, y0)
         ac.glVertex2f(x1, y0)
@@ -106,9 +104,9 @@ def _draw_heatmap(rect, dim):
         ac.glEnd()
 
 
-def _draw_grid(rect, dim):
+def _draw_grid(rect):
     x, y, w, h = rect
-    ac.glColor4f(0.42, 0.42, 0.42, 0.44 * dim)
+    ac.glColor4f(0.42, 0.42, 0.42, 0.44)
 
     for rpm in (1000, 2000, 3000, 4000, 5000, 6000):
         px = _rpm_to_px(float(rpm), rect)
@@ -125,42 +123,32 @@ def _draw_grid(rect, dim):
         ac.glEnd()
 
 
-def _draw_trace(state, rect, dim):
+def _draw_trace(state, rect):
     trace_rpm = state.bsfc_trace_rpm.to_list()
     trace_load = state.bsfc_trace_load.to_list()
     count = min(len(trace_rpm), len(trace_load))
     if count < 2:
         return
 
-    segments = []
-    prev = None
+    ac.glColor4f(1.0, 1.0, 0.3, 0.7)
+    drawing = False
     for idx in range(count):
         rpm = float(trace_rpm[idx])
         load = float(trace_load[idx])
-        if not _valid_point(rpm, load):
-            prev = None
+        if math.isnan(rpm) or math.isnan(load) or math.isinf(rpm) or math.isinf(load):
+            if drawing:
+                ac.glEnd()
+                drawing = False
             continue
-        cur = (_rpm_to_px(rpm, rect), _load_to_py(load, rect))
-        if prev is not None:
-            segments.append((prev, cur, idx))
-        prev = cur
-
-    if not segments:
-        return
-
-    total = float(max(count - 1, 1))
-    for p0, p1, idx in segments:
-        age = float(idx) / total
-        alpha = (0.14 + age * 0.72) * dim
-        color = (1.0, 0.96, 0.36)
-        ac.glColor4f(color[0], color[1], color[2], alpha)
-        ac.glBegin(_GL_LINES)
-        ac.glVertex2f(p0[0], p0[1])
-        ac.glVertex2f(p1[0], p1[1])
+        if not drawing:
+            ac.glBegin(_GL_LINE_STRIP)
+            drawing = True
+        ac.glVertex2f(_rpm_to_px(rpm, rect), _load_to_py(load, rect))
+    if drawing:
         ac.glEnd()
 
 
-def _draw_current_point(state, rect, dim):
+def _draw_current_point(state, rect):
     if state.current_load_display_ratio is None:
         return
 
@@ -168,7 +156,7 @@ def _draw_current_point(state, rect, dim):
     py = _load_to_py(float(state.current_load_display_ratio), rect)
     size = 5.0
 
-    ac.glColor4f(1.0, 1.0, 1.0, 0.92 * dim)
+    ac.glColor4f(1.0, 1.0, 1.0, 1.0)
     ac.glBegin(_GL_QUADS)
     ac.glVertex2f(px - size, py - size)
     ac.glVertex2f(px + size, py - size)
@@ -177,36 +165,8 @@ def _draw_current_point(state, rect, dim):
     ac.glEnd()
 
 
-def _draw_gear_candidates(state, rect, dim):
-    for candidate in getattr(state, "bsfc_gear_candidates", []):
-        rpm = float(candidate.get("rpm", 0.0))
-        load = float(candidate.get("load", 0.0))
-        if not _valid_point(rpm, load):
-            continue
-        px = _rpm_to_px(rpm, rect)
-        py = _load_to_py(load, rect)
-        size = 4.0 if candidate.get("is_current") else 2.8
-        color = (1.0, 0.88, 0.28, 0.82 * dim) if candidate.get("is_current") else (0.88, 0.90, 0.96, 0.44 * dim)
-        ac.glColor4f(color[0], color[1], color[2], color[3])
-        ac.glBegin(_GL_QUADS)
-        ac.glVertex2f(px - size, py - size)
-        ac.glVertex2f(px + size, py - size)
-        ac.glVertex2f(px + size, py + size)
-        ac.glVertex2f(px - size, py + size)
-        ac.glEnd()
-
-
 def cell_label_position(rpm, load, rect):
     return _rpm_to_px(rpm, rect), _load_to_py(load, rect)
-
-
-def _valid_point(rpm, load):
-    return (
-        not math.isnan(rpm) and
-        not math.isnan(load) and
-        not math.isinf(rpm) and
-        not math.isinf(load)
-    )
 
 
 def _rpm_to_px(rpm, rect):

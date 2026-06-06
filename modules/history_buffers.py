@@ -38,7 +38,3 @@ class RingBuffer(object):
     @property
     def full(self):
         return self._size == self._maxlen
-
-    @property
-    def maxlen(self):
-        return self._maxlen

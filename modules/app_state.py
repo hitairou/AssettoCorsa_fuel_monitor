@@ -1,7 +1,7 @@
 # modules/app_state.py
 # Global mutable state container for ecoran_fuel_monitor.
 
-_HIST_LEN = 200   # 20 s at 10 Hz
+_HIST_LEN = 100   # 10 s at 10 Hz
 
 
 class AppState(object):
@@ -26,7 +26,6 @@ class AppState(object):
         self.raw_car_coordinates = [0.0, 0.0, 0.0]
         self.raw_velocity = [0.0, 0.0, 0.0]
         self.raw_pitch = 0.0
-        self.raw_heading = 0.0
         self.is_in_pit = False
         self.is_in_pit_lane = False
 
@@ -45,7 +44,6 @@ class AppState(object):
         self.car_coords = [0.0, 0.0, 0.0]
         self.velocity = [0.0, 0.0, 0.0]
         self.pitch = 0.0
-        self.heading = 0.0
 
         # ------------------------------------------------------------------
         # Derived / inferred values
@@ -100,12 +98,11 @@ class AppState(object):
         self.hist_aero = RingBuffer(_HIST_LEN)
         self.hist_accel = RingBuffer(_HIST_LEN)
         self.hist_grade = RingBuffer(_HIST_LEN)
-        self.hist_residual_balance_j = RingBuffer(_HIST_LEN)
 
         self.bsfc_trace_rpm = RingBuffer(_HIST_LEN)
         self.bsfc_trace_load = RingBuffer(_HIST_LEN)
 
-        self.power_graph_scale_w = 800.0
+        self.power_graph_scale_w = 2000.0
         self.net_energy_balance_scale_j = 5000.0
 
         # ------------------------------------------------------------------
@@ -118,7 +115,6 @@ class AppState(object):
 
         self.measurement_start_mode = "first_cross_sf"
         self.measurement_active = False
-        self.measurement_finished = False
         self.measurement_armed = False
         self.measurement_elapsed_time_s = 0.0
         self.measurement_engine_on_time_s = 0.0
@@ -128,9 +124,6 @@ class AppState(object):
         self.measurement_start_session_time_s = 0.0
         self.measurement_start_abs_dist_m = 0.0
         self.measurement_started_at_sf = False
-        self.measurement_started_by_gate = False
-        self.measurement_start_sim_time = 0.0
-        self.measurement_stop_sim_time = 0.0
 
         self.avg_fuel_econ_km_per_l = None
         self.avg_speed_kmh = None
@@ -181,7 +174,6 @@ class AppState(object):
         self.current_lap_restart_count = 0
         self.current_lap_engine_on_time = 0.0
         self.current_lap_time_s = 0.0
-        self.gate_based_lap_count = 0
 
         # ------------------------------------------------------------------
         # Previous samples for derivatives
@@ -191,7 +183,6 @@ class AppState(object):
         self.prev_height = 0.0
         self.prev_speed_ms = 0.0
         self.prev_session_dist_m = 0.0
-        self.prev_gate_position = None
 
         # ------------------------------------------------------------------
         # Update accumulator
@@ -226,40 +217,6 @@ class AppState(object):
         # Shared memory availability
         # ------------------------------------------------------------------
         self.sim_info_ok = False
-
-        # ------------------------------------------------------------------
-        # Track / gate control
-        # ------------------------------------------------------------------
-        self.track_name = ""
-        self.track_layout = ""
-        self.track_key = ""
-        self.track_key_loaded = ""
-        self.gates = {
-            "start": None,
-            "lap": None,
-            "finish": None,
-        }
-        self.selected_gate_kind = "lap"
-        self.record_mode = "manual"
-        self.record_state = "idle"
-        self.record_control_enabled = False
-        self.pending_record_command = ""
-        self.gate_last_trigger_time = {
-            "start": -1e9,
-            "lap": -1e9,
-            "finish": -1e9,
-        }
-        self.gate_last_trigger_name = ""
-        self.gate_last_trigger_sim_time = None
-        self.gate_last_status = ""
-        self.gate_info_visible = True
-        self.gate_storage_path = ""
-        self.gate_debug_last_s0_s1 = "---"
-        self.gate_debug_last_u = None
-        self.gate_debug_last_speed = None
-        self.gate_debug_last_reason_rejected = ""
-        self.last_forward_world = [1.0, 0.0, 0.0]
-        self.bsfc_gear_candidates = []
 
 
 state = AppState()

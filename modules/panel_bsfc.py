@@ -2,7 +2,9 @@
 # BSFC map analysis window.
 
 from modules import bsfc_renderer
+
 from modules.display_format import fmt_float, fmt_pct, fmt_rpm
+
 from modules.panel_common import add_label, move, set_color, set_text, safe_call
 
 try:
@@ -13,6 +15,7 @@ except ImportError:
             def _noop(*args, **kwargs):
                 return 0
             return _noop
+
     ac = _AcStub()
 
 
@@ -43,6 +46,7 @@ def create(window_id):
         "window_id": window_id,
         "cell_labels": [],
     }
+
     labels["summary"] = add_label(window_id, "---", 0, 0, 260, 18, 13, "center")
     labels["x_axis_title"] = add_label(window_id, "RPM [1/min]", 0, 0, 96, 12, 9, "center")
     labels["y_axis_title"] = add_label(window_id, "Load [%]", 0, 0, 62, 12, 9, "left")
@@ -50,6 +54,7 @@ def create(window_id):
     labels["x_ticks"] = []
     for _rpm in (1000, 2000, 3000, 4000, 5000, 6000):
         labels["x_ticks"].append(add_label(window_id, "---", 0, 0, 34, 12, 9, "center"))
+
     labels["y_ticks"] = []
     for _load in (100, 80, 60, 40, 20, 0):
         labels["y_ticks"].append(add_label(window_id, "---", 0, 0, 30, 12, 9, "right"))
@@ -69,7 +74,7 @@ def update(labels, state):
     if state.current_load_display_ratio is not None:
         current_load = state.current_load_display_ratio * 100.0
 
-    summary = "{0} rpm   {1} %   {2} g/kWh".format(
+    summary = "{0} rpm {1} % {2} g/kWh".format(
         fmt_rpm(current_rpm),
         fmt_pct(current_load, 1),
         fmt_float(state.current_bsfc_display_g_per_kwh, 0),
@@ -84,12 +89,13 @@ def update(labels, state):
     for tick in labels["x_ticks"] + labels["y_ticks"]:
         set_color(tick, (0.82, 0.84, 0.88, 0.76 * dim_alpha))
     for cell in labels["cell_labels"]:
-        set_color(cell["id"], (0.94, 0.95, 0.98, 0.26 * dim_alpha))
+        set_color(cell["id"], (1.0, 1.0, 1.0, 1.0))
 
 
 def _ensure_cell_labels(labels):
     if labels["cell_labels"]:
         return
+
     window_id = labels["window_id"]
     for item in bsfc_renderer.get_cell_labels():
         label_id = add_label(window_id, item["text"], 0, 0, 30, 10, 8, "center")
@@ -101,6 +107,10 @@ def _ensure_cell_labels(labels):
         })
 
 
+def prime_cell_labels(labels):
+    _ensure_cell_labels(labels)
+
+
 def _apply_layout(labels, size):
     geo = layout(size)
     move(labels["summary"], geo["summary"][0], geo["summary"][1], geo["summary"][2], geo["summary"][3])
@@ -109,6 +119,7 @@ def _apply_layout(labels, size):
 
     map_rect = geo["map_rect"]
     x0, y0, w, h = map_rect
+
     rpms = (1000, 2000, 3000, 4000, 5000, 6000)
     for idx, rpm in enumerate(rpms):
         px = x0 + int((float(idx) / float(len(rpms) - 1)) * w) - 16
