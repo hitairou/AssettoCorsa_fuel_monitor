@@ -55,6 +55,7 @@ _lap_tracker = None
 
 _elapsed_time_s = 0.0
 _last_update_error = None
+_last_bsfc_diag_log_s = -1.0
 
 _LOG_DIR = os.environ.get("TEMP", _APP_DIR)
 _LOG_FILE = os.path.join(_LOG_DIR, "ecoran_fuel_monitor_debug.txt")
@@ -392,6 +393,8 @@ def acUpdate(delta_t):
 
 
 def _main_update(dt):
+    global _last_bsfc_diag_log_s
+
     strategy = state.strategy
     vehicle = state.vehicle
 
@@ -551,6 +554,22 @@ def _main_update(dt):
     state.current_E_store = state.net_energy_balance_j
 
     state.first_update = False
+
+    if _elapsed_time_s - _last_bsfc_diag_log_s >= 1.0:
+        _last_bsfc_diag_log_s = _elapsed_time_s
+        _log(
+            "BSFC diag t={0:.1f} engine_on={1} rpm={2} gear={3} load={4:.3f} trace={5} valid={6} obs_load={7}".format(
+                _elapsed_time_s,
+                int(state.engine_on),
+                int(state.observed_rpm),
+                int(state.display_gear),
+                float(state.demand_load_ratio),
+                len(state.bsfc_trace_rpm),
+                int(engine_point_valid),
+                state.current_load_display_ratio,
+            ),
+            force=True,
+        )
 
     _log(
         "dt={0:.3f} rawGear={1} dispGear={2} engineOn={3} "
