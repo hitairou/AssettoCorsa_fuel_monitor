@@ -2,6 +2,8 @@
 # GL renderer for BSFC heatmap, current point, and 10-second trace.
 
 import math
+import os
+import tempfile
 
 try:
     import ac
@@ -25,16 +27,19 @@ _bg_cells = []
 _cell_labels = []
 _font_index = None
 _shadow_font_index = None
+_debug_log_path = os.path.join(tempfile.gettempdir(), "ecoran_bsfc_render_debug.txt")
+_debug_logged_draw = False
 
 
 def init(bsfc_interp):
     global _rpm_min, _rpm_max, _load_min, _load_max, _bg_cells, _cell_labels
-    global _font_index, _shadow_font_index
+    global _font_index, _shadow_font_index, _debug_logged_draw
 
     _bg_cells = []
     _cell_labels = []
     _font_index = None
     _shadow_font_index = None
+    _debug_logged_draw = False
     rpm_axis = getattr(bsfc_interp, "rpm_axis", [])
     load_axis = getattr(bsfc_interp, "load_axis", [])
 
@@ -64,6 +69,11 @@ def init(bsfc_interp):
             })
 
     _init_fonts()
+    _debug_log(
+        "init cells={0} font={1} shadow={2}".format(
+            len(_cell_labels), _font_index, _shadow_font_index
+        )
+    )
 
 
 def get_cell_labels():
@@ -135,6 +145,11 @@ def _draw_cell_labels(rect):
     if not _cell_labels or _font_index is None:
         return
 
+    global _debug_logged_draw
+    if not _debug_logged_draw:
+        _debug_logged_draw = True
+        _debug_log("draw cell labels count={0} rect={1}".format(len(_cell_labels), rect))
+
     for cell in _cell_labels:
         px = _rpm_to_px(cell["rpm"], rect)
         py = _load_to_py(cell["load"], rect)
@@ -181,14 +196,22 @@ def _draw_current_point(state, rect):
 
     px = _rpm_to_px(float(state.observed_rpm), rect)
     py = _load_to_py(float(state.current_load_display_ratio), rect)
-    size = 5.0
+    size = 7.0
 
-    ac.glColor4f(1.0, 1.0, 1.0, 1.0)
+    ac.glColor4f(1.0, 0.18, 0.82, 0.98)
     ac.glBegin(_GL_QUADS)
     ac.glVertex2f(px - size, py - size)
     ac.glVertex2f(px + size, py - size)
     ac.glVertex2f(px + size, py + size)
     ac.glVertex2f(px - size, py + size)
+    ac.glEnd()
+
+    ac.glColor4f(1.0, 1.0, 1.0, 1.0)
+    ac.glBegin(_GL_LINES)
+    ac.glVertex2f(px - size * 0.9, py)
+    ac.glVertex2f(px + size * 0.9, py)
+    ac.glVertex2f(px, py - size * 0.9)
+    ac.glVertex2f(px, py + size * 0.9)
     ac.glEnd()
 
 
@@ -201,13 +224,23 @@ def _init_fonts():
     try:
         _font_index = ac.ext_glFontCreate("arial", 8.5, 0, 400)
         _shadow_font_index = ac.ext_glFontCreate("arial", 8.5, 0, 400)
+        _debug_log("font create ok font={0} shadow={1}".format(_font_index, _shadow_font_index))
     except Exception:
         _font_index = None
         _shadow_font_index = None
+        _debug_log("font create failed")
 
 
 def cell_label_position(rpm, load, rect):
     return _rpm_to_px(rpm, rect), _load_to_py(load, rect)
+
+
+def _debug_log(message):
+    try:
+        with open(_debug_log_path, "a") as handle:
+            handle.write(message + "\n")
+    except Exception:
+        pass
 
 
 def _rpm_to_px(rpm, rect):
