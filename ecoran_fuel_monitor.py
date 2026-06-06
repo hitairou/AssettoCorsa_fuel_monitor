@@ -285,7 +285,7 @@ def _reset_lap_accumulators():
     state.current_lap_time_s = 0.0
 
 
-def _start_measurement_session(abs_dist_m, at_sf):
+def _start_measurement_session(abs_dist_m, at_sf, count_first_lap=False):
     ignore_initial_partial = _cfg_bool(
         state.strategy.get("ignore_initial_partial_lap", 1), True
     )
@@ -320,6 +320,7 @@ def _start_measurement_session(abs_dist_m, at_sf):
         state.cumul_fuel_ml,
         at_sf=at_sf,
         ignore_initial_partial=ignore_initial_partial,
+        count_first_lap=count_first_lap,
     )
 
 
@@ -354,7 +355,11 @@ def _update_measurement_state(lap_event, vehicle):
             dist_ok = moved_m >= float(state.strategy.get("auto_start_min_distance_m", 1.0))
             engine_ok = (not _cfg_bool(state.strategy.get("auto_start_engine_required", 0), False)) or state.engine_on
             if (not state.measurement_auto_suppressed) and engine_ok and (speed_ok or dist_ok):
-                _start_measurement_session(state.session_dist_m, at_sf=False)
+                _start_measurement_session(
+                    state.session_dist_m,
+                    at_sf=False,
+                    count_first_lap=True,
+                )
         elif lap_event["sf_crossed"]:
             if mode == "first_cross_sf":
                 _start_measurement_session(lap_event["cross_abs_dist_m"], at_sf=True)
@@ -469,6 +474,28 @@ def _update_measurement_state(lap_event, vehicle):
         state.est_8lap_econ_km_per_l_display
         if state.est_8lap_econ_km_per_l_display is not None else 0.0
     )
+    if _cfg_bool(state.strategy.get("debug_mode", 0), False) and (
+        lap_event["sf_crossed"] or lap_event["measurement_lap_completed"] or lap_event["measurement_reference_reset"]
+    ):
+        _log(
+            "lap event active={0} mode={1} sf_crossed={2} lap_completed={3} reference_reset={4} "
+            "laps_completed={5} lap_rows={6} current_lap_dist={7:.2f} current_lap_fuel={8:.3f} "
+            "session_dist={9:.2f} measurement_start_abs={10:.2f} measurement_lap_start_abs={11:.2f}".format(
+                int(state.measurement_active),
+                state.measurement_start_mode,
+                int(lap_event["sf_crossed"]),
+                int(lap_event["measurement_lap_completed"]),
+                int(lap_event["measurement_reference_reset"]),
+                int(state.laps_completed),
+                len(state.lap_rows),
+                float(state.current_lap_dist_m),
+                float(state.current_lap_fuel_ml),
+                float(state.session_dist_m),
+                float(state.measurement_start_abs_dist_m),
+                float(getattr(_lap_tracker, "measurement_lap_start_abs_dist_m", 0.0)),
+            ),
+            force=True,
+        )
 
 
 def acMain(ac_version):
@@ -944,8 +971,9 @@ def _save_lap_row(vehicle, fuel_used_ml=None):
         avg_speed = (lap_distance_m / lap_time) * 3.6
         on_ratio = state.current_lap_engine_on_time / lap_time * 100.0
 
+        lap_number = state.laps_completed + 1
         row = {
-            "lap_number": state.laps_completed + 1,
+            "lap_number": lap_number,
             "fuel_econ_km_per_l": fuel_econ,
             "fuel_used_ml": fuel_used_ml,
             "avg_speed_kmh": avg_speed,
@@ -958,6 +986,14 @@ def _save_lap_row(vehicle, fuel_used_ml=None):
             "engine_on_ratio_pct": on_ratio,
         }
         state.lap_rows.append(row)
+        _log(
+            "lap row saved lap={0} fuel={1:.3f} econ={2:.2f}".format(
+                lap_number,
+                fuel_used_ml,
+                fuel_econ,
+            ),
+            force=True,
+        )
     except Exception as exc:
         _log("_save_lap_row error: {0}".format(exc), force=True)
 

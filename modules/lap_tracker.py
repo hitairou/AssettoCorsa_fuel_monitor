@@ -23,12 +23,15 @@ class LapTracker(object):
         self.laps_completed = 0
 
     def start_measurement(self, abs_dist_m, cumul_fuel_ml,
-                          at_sf=False, ignore_initial_partial=True):
+                          at_sf=False, ignore_initial_partial=True,
+                          count_first_lap=False):
         self.measurement_active = True
         self.measurement_start_abs_dist_m = float(abs_dist_m)
         self._measurement_lap_start_abs_dist_m = float(abs_dist_m)
         self._measurement_lap_start_fuel_ml = float(cumul_fuel_ml)
-        self._measurement_full_lap_started = bool(at_sf or not ignore_initial_partial)
+        self._measurement_full_lap_started = bool(
+            at_sf or not ignore_initial_partial or count_first_lap
+        )
         self.lap_fuel_history = []
         self.laps_completed = 0
 
@@ -123,6 +126,10 @@ class LapTracker(object):
         if not self.measurement_active:
             return 0.0
         return max(self._session_dist_m - self.measurement_start_abs_dist_m, 0.0)
+
+    @property
+    def measurement_lap_start_abs_dist_m(self):
+        return self._measurement_lap_start_abs_dist_m
 
     @property
     def current_lap_progress(self):
