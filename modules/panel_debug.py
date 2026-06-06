@@ -5,7 +5,7 @@ from modules.display_format import fmt_display_gear, fmt_float, fmt_int, fmt_pct
 from modules.panel_common import add_label, set_text
 
 
-WINDOW_SIZE = (330, 360)
+WINDOW_SIZE = (330, 390)
 PADDING = 8
 ROW_H = 12
 TITLE_SAFE_TOP = 28
@@ -28,6 +28,8 @@ ROWS = [
     ("raw_pitch", "Raw pitch"),
     ("demand_load", "Demand Load [%]"),
     ("demand_bsfc", "Demand BSFC [g/kWh]"),
+    ("bsfc_map_file", "BSFC Map"),
+    ("bsfc_map_min", "BSFC Min"),
     ("demand_fuel_flow", "Demand Fuel Flow [mL/s]"),
     ("cumul_fuel", "Cumul Fuel [mL]"),
     ("measurement_fuel", "Meas Fuel [mL]"),
@@ -83,6 +85,8 @@ def update(labels, state):
         "raw_pitch": fmt_float(state.raw_pitch, 4),
         "demand_load": fmt_pct(state.demand_load_ratio * 100.0, 1),
         "demand_bsfc": fmt_float(state.demand_bsfc_g_per_kwh, 0),
+        "bsfc_map_file": str(getattr(state, "bsfc_map_file", "")),
+        "bsfc_map_min": _fmt_bsfc_min(state),
         "demand_fuel_flow": fmt_float(state.demand_fuel_flow_ml_s, 4),
         "cumul_fuel": fmt_float(state.cumul_fuel_ml, 3),
         "measurement_fuel": fmt_float(state.measurement_fuel_used_ml, 3),
@@ -102,5 +106,17 @@ def _fmt_vec3(vec3):
         return "{0:.1f},{1:.1f},{2:.1f}".format(
             float(vec3[0]), float(vec3[1]), float(vec3[2])
         )
+    except Exception:
+        return "---"
+
+
+def _fmt_bsfc_min(state):
+    value = getattr(state, "bsfc_map_min_value", None)
+    rpm = getattr(state, "bsfc_map_min_rpm", None)
+    load = getattr(state, "bsfc_map_min_load", None)
+    if value is None or rpm is None or load is None:
+        return "---"
+    try:
+        return "{0:.0f} @ {1:.0f}/{2:.2f}".format(float(value), float(rpm), float(load))
     except Exception:
         return "---"

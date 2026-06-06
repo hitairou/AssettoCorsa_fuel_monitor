@@ -1,18 +1,20 @@
 # Tmax map - Maximum engine torque vs RPM
 # Format: rpm,Tmax_Nm
-# Super Cub 50 target curve aligned with AssettoCorsa_tu_ecoran_c50e power.lut.
+# Super Cub 50 service-manual target curve aligned with AssettoCorsa_tu_ecoran_c50e power.lut.
 rpm,Tmax_Nm
-800,1.2
-1200,2.0
-1500,2.5
-2000,3.0
-3000,3.4
-4000,3.7
-5000,3.8
-5500,3.75
-6000,3.65
-6500,3.55
-7000,3.41
-7500,3.05
-7800,2.2
-8000,0.5
+800,1.5
+1200,2.4
+1500,3.0
+2000,3.5
+3000,4.1
+4000,4.5
+5000,4.65
+5500,4.71
+6000,4.65
+6500,4.55
+7000,4.38
+7500,4.21
+7800,3.90
+8000,3.30
+8200,2.20
+8500,0.80

@@ -144,9 +144,9 @@ def low_load_correction(bsfc, load, threshold=0.2, max_penalty=1.5):
 # Factory functions
 # ---------------------------------------------------------------------------
 
-def build_bsfc_interpolator():
+def build_bsfc_interpolator(filename="bsfc_map.csv"):
     from modules.data_loader import load_csv_2d
-    rpm_axis, load_axis, table = load_csv_2d("bsfc_map.csv")
+    rpm_axis, load_axis, table = load_csv_2d(filename or "bsfc_map.csv")
     return BSFCInterpolator(rpm_axis, load_axis, table)
 
 

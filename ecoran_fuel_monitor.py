@@ -33,7 +33,7 @@ from modules.bsfc_interp import (
     build_tmax_lookup,
     low_load_correction,
 )
-from modules.data_loader import load_strategy_config, load_vehicle_config
+from modules.data_loader import config_path, load_strategy_config, load_vehicle_config
 from modules.display_format import apply_gear_display_offset
 from modules.fuel_integrator import calc_km_per_l, compute_fuel_flow, euler_step
 from modules.forces import calc_forces
@@ -175,11 +175,16 @@ def _compute_build_id():
         os.path.join(_APP_DIR, "modules", "gauge_renderer.py"),
         os.path.join(_APP_DIR, "modules", "app_state.py"),
         os.path.join(_APP_DIR, "modules", "history_buffers.py"),
+        os.path.join(_APP_DIR, "modules", "bsfc_interp.py"),
         os.path.join(_APP_DIR, "modules", "bsfc_renderer.py"),
+        os.path.join(_APP_DIR, "modules", "panel_debug.py"),
+        os.path.join(_APP_DIR, "modules", "data_loader.py"),
         os.path.join(_APP_DIR, "modules", "window_manager.py"),
         os.path.join(_APP_DIR, "config", "strategy.ini"),
         os.path.join(_APP_DIR, "config", "vehicle.ini"),
         os.path.join(_APP_DIR, "config", "bsfc_map.csv"),
+        os.path.join(_APP_DIR, "config", "bsfc_map_efi_wpc_4700.csv"),
+        os.path.join(_APP_DIR, "config", "bsfc_map_placeholder_lowrpm.csv"),
         os.path.join(_APP_DIR, "config", "tmax_map.csv"),
     )
     digest = hashlib.sha1()
@@ -190,6 +195,64 @@ def _compute_build_id():
         except Exception:
             continue
     return digest.hexdigest()[:6].upper()
+
+
+def _select_bsfc_map_file(strategy):
+    filename = str(strategy.get("bsfc_map_file", "bsfc_map.csv")).strip()
+    if not filename:
+        filename = "bsfc_map.csv"
+    filename = os.path.basename(filename)
+    if os.path.isfile(config_path(filename)):
+        return filename
+    fallback = "bsfc_map.csv"
+    _log(
+        "bsfc map file not found: {0}; fallback={1}".format(filename, fallback),
+        force=True,
+    )
+    return fallback
+
+
+def _set_bsfc_map_metadata(filename, interpolator):
+    state.bsfc_map_file = filename
+    state.bsfc_map_min_value = None
+    state.bsfc_map_min_rpm = None
+    state.bsfc_map_min_load = None
+
+    min_value = None
+    min_rpm = None
+    min_load = None
+    rpm_axis = getattr(interpolator, "rpm_axis", [])
+    load_axis = getattr(interpolator, "load_axis", [])
+    table = getattr(interpolator, "table", [])
+    for row_index, rpm in enumerate(rpm_axis):
+        if row_index >= len(table):
+            continue
+        row = table[row_index]
+        for col_index, value in enumerate(row):
+            if col_index >= len(load_axis):
+                continue
+            try:
+                value = float(value)
+            except Exception:
+                continue
+            if min_value is None or value < min_value:
+                min_value = value
+                min_rpm = float(rpm)
+                min_load = float(load_axis[col_index])
+
+    state.bsfc_map_min_value = min_value
+    state.bsfc_map_min_rpm = min_rpm
+    state.bsfc_map_min_load = min_load
+    if min_value is not None:
+        _log(
+            "bsfc map loaded file={0} min={1:.1f} rpm={2:.0f} load={3:.2f}".format(
+                filename,
+                min_value,
+                min_rpm,
+                min_load,
+            ),
+            force=True,
+        )
 
 
 def _clear_power_history(reason=""):
@@ -543,7 +606,9 @@ def acMain(ac_version):
         create_windows(state)
 
         stage = "build interpolators"
-        _bsfc_interp = build_bsfc_interpolator()
+        bsfc_map_file = _select_bsfc_map_file(strategy)
+        _bsfc_interp = build_bsfc_interpolator(bsfc_map_file)
+        _set_bsfc_map_metadata(bsfc_map_file, _bsfc_interp)
         _tmax_lookup = build_tmax_lookup()
 
         stage = "init bsfc renderer"

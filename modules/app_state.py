@@ -71,6 +71,10 @@ class AppState(object):
         self.current_bsfc_display_g_per_kwh = None
         self.current_load_display_ratio = None
         self.current_fuel_flow_display_ml_s = 0.0
+        self.bsfc_map_file = ""
+        self.bsfc_map_min_value = None
+        self.bsfc_map_min_rpm = None
+        self.bsfc_map_min_load = None
 
         self.demand_roll_power_w = 0.0
         self.demand_aero_power_w = 0.0
