@@ -216,11 +216,14 @@ def _draw_trace(state, rect):
 
 
 def _draw_current_point(state, rect):
-    if state.current_load_display_ratio is None:
+    load = state.current_load_display_ratio
+    if load is None:
+        load = getattr(state, "demand_load_ratio", None)
+    if load is None:
         return
 
     px = _rpm_to_px(float(state.observed_rpm), rect)
-    py = _load_to_py(float(state.current_load_display_ratio), rect)
+    py = _load_to_py(float(load), rect)
     size = 7.0
 
     ac.glColor4f(1.0, 0.18, 0.82, 0.98)
