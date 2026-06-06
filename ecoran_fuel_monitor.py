@@ -108,7 +108,7 @@ def _detect_engine(rpm, display_gear, strategy):
 
     if state.engine_on:
         return rpm >= off_thr
-    return (rpm > on_thr) and (display_gear > 0)
+    return rpm > on_thr
 
 
 def _reset_lap_accumulators():
