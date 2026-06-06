@@ -5,7 +5,7 @@ from modules.display_format import fmt_display_gear, fmt_float, fmt_int, fmt_pct
 from modules.panel_common import add_label, set_text
 
 
-WINDOW_SIZE = (300, 300)
+WINDOW_SIZE = (330, 360)
 PADDING = 8
 ROW_H = 12
 TITLE_SAFE_TOP = 28
@@ -13,8 +13,14 @@ TITLE_SAFE_TOP = 28
 ROWS = [
     ("raw_gear", "Raw Gear"),
     ("display_gear", "Display Gear"),
+    ("rpm_source", "RPM Source"),
     ("raw_rpm", "Raw RPM"),
     ("model_rpm", "Model RPM"),
+    ("calculated_rpm", "Calculated RPM"),
+    ("telemetry_clamped_rpm", "Telemetry Clamped RPM"),
+    ("model_raw_delta", "Model-Raw Delta"),
+    ("calc_raw_delta", "Calc-Raw Delta"),
+    ("rear_tire_circ", "Rear Tire Circ [m]"),
     ("grade_source", "Grade Source"),
     ("vert_idx", "Vertical Axis Index"),
     ("raw_coords", "Raw carCoordinates"),
@@ -35,8 +41,8 @@ ROWS = [
 
 def create(window_id):
     labels = {}
-    label_w = 156
-    value_w = 108
+    label_w = 176
+    value_w = 138
     value_x = PADDING + label_w
 
     for idx, (key, title) in enumerate(ROWS):
@@ -58,8 +64,18 @@ def update(labels, state):
     values = {
         "raw_gear": fmt_int(state.raw_gear),
         "display_gear": fmt_display_gear(state.display_gear),
+        "rpm_source": str(getattr(state, "engine_rpm_source", "")),
         "raw_rpm": fmt_rpm(state.observed_rpm),
         "model_rpm": fmt_rpm(getattr(state, "model_engine_rpm", 0.0)),
+        "calculated_rpm": fmt_rpm(getattr(state, "calculated_engine_rpm", 0.0)),
+        "telemetry_clamped_rpm": fmt_rpm(getattr(state, "telemetry_clamped_engine_rpm", 0.0)),
+        "model_raw_delta": fmt_float(
+            getattr(state, "model_engine_rpm", 0.0) - float(state.observed_rpm), 0
+        ),
+        "calc_raw_delta": fmt_float(
+            getattr(state, "calculated_engine_rpm", 0.0) - float(state.observed_rpm), 0
+        ),
+        "rear_tire_circ": fmt_float(state.vehicle.get("rear_tire_circumference_m", 0.0), 3),
         "grade_source": state.grade_source,
         "vert_idx": str(state.strategy.get("vertical_axis_index", 1)),
         "raw_coords": _fmt_vec3(state.raw_car_coordinates),

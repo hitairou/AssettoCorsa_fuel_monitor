@@ -16,6 +16,9 @@ class AppState(object):
         self.observed_rpm = 0
         self.raw_engine_rpm = 0
         self.model_engine_rpm = 0.0
+        self.calculated_engine_rpm = 0.0
+        self.telemetry_clamped_engine_rpm = 0.0
+        self.engine_rpm_source = "telemetry_clamped"
         self.raw_gear = 0
         self.display_gear = 0
         self.observed_throttle = 0.0

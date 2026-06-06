@@ -99,6 +99,18 @@ should not be public.
   drivetrain efficiency, gear ratios, race distance, and lap count.
 - Runtime logs and Python caches are intentionally ignored by Git.
 
+## Tyre And RPM Model
+
+- Real tyre: IRC EC-R 20 x 1.75 eco-run tyre.
+- Fuel monitor model circumference: `rear_tire_circumference_m = 1.571`,
+  estimated from nominal 47-406 sizing, OD about 0.500 m.
+- The Assetto Corsa car mod `tyres.ini` is intentionally not modified because
+  changing it caused wheelspin/contact instability.
+- Raw RPM and calculated RPM can differ because AC physics still uses the car
+  mod tyre setup while the fuel model uses the real tyre circumference.
+- The standard BSFC calculation uses `engine_rpm_source = telemetry_clamped`.
+- `calculated` remains available for comparison and validation.
+
 ## Power Graph Diagnostics
 
 Power graph diagnostics are hidden during normal use. To validate renderer

@@ -179,6 +179,8 @@ def _compute_build_id():
         os.path.join(_APP_DIR, "modules", "window_manager.py"),
         os.path.join(_APP_DIR, "config", "strategy.ini"),
         os.path.join(_APP_DIR, "config", "vehicle.ini"),
+        os.path.join(_APP_DIR, "config", "bsfc_map.csv"),
+        os.path.join(_APP_DIR, "config", "tmax_map.csv"),
     )
     digest = hashlib.sha1()
     for path in files:
@@ -240,28 +242,23 @@ def _clamp(value, min_value, max_value):
     return max(float(min_value), min(float(max_value), float(value)))
 
 
-def _telemetry_clamped_rpm(strategy):
-    rpm_min = float(strategy.get("engine_rpm_min", 800.0))
-    rpm_max = float(strategy.get("engine_rpm_max", 7500.0))
+def _rpm_bounds(vehicle, strategy):
+    rpm_min = float(strategy.get("engine_rpm_min", vehicle.get("engine_rpm_min", 800.0)))
+    rpm_max = float(strategy.get("engine_rpm_max", vehicle.get("engine_rpm_max", 7800.0)))
+    return rpm_min, rpm_max
+
+
+def _telemetry_clamped_rpm(vehicle, strategy):
+    rpm_min, rpm_max = _rpm_bounds(vehicle, strategy)
     return _clamp(state.observed_rpm, rpm_min, rpm_max)
 
 
-def _compute_model_engine_rpm(vehicle, strategy):
-    source = str(strategy.get("engine_rpm_source", vehicle.get("engine_rpm_source", "calculated"))).strip().lower()
-    rpm_min = float(strategy.get("engine_rpm_min", vehicle.get("engine_rpm_min", 800.0)))
-    rpm_max = float(strategy.get("engine_rpm_max", vehicle.get("engine_rpm_max", 7500.0)))
-    if source == "telemetry":
-        return float(state.observed_rpm)
-    if source == "telemetry_clamped":
-        return _clamp(state.observed_rpm, rpm_min, rpm_max)
-
-    if source != "calculated":
-        source = "calculated"
-
+def _calculate_engine_rpm(vehicle, strategy):
+    rpm_min, rpm_max = _rpm_bounds(vehicle, strategy)
     gear = int(state.raw_gear)
     gear_ratio = float(vehicle.get("gear_{0}".format(gear), 0.0))
     speed_ms = max(float(state.observed_speed_ms), 0.0)
-    if source == "calculated" and gear > 0 and gear_ratio > 0.0:
+    if gear > 0 and gear_ratio > 0.0:
         if speed_ms < 0.05:
             return rpm_min
         circ = max(float(vehicle.get("rear_tire_circumference_m", 1.5)), 1e-6)
@@ -270,8 +267,17 @@ def _compute_model_engine_rpm(vehicle, strategy):
         wheel_rpm = (speed_ms / circ) * 60.0
         rpm = wheel_rpm * primary * gear_ratio * secondary
         return _clamp(rpm, rpm_min, rpm_max)
+    return _telemetry_clamped_rpm(vehicle, strategy)
 
-    return _clamp(state.observed_rpm, rpm_min, rpm_max)
+
+def _compute_model_engine_rpm(vehicle, strategy):
+    source = str(strategy.get("engine_rpm_source", vehicle.get("engine_rpm_source", "telemetry_clamped"))).strip().lower()
+    if source == "telemetry":
+        return float(state.observed_rpm)
+    if source == "calculated":
+        return _calculate_engine_rpm(vehicle, strategy)
+
+    return _telemetry_clamped_rpm(vehicle, strategy)
 
 
 def _reset_lap_accumulators():
@@ -675,6 +681,11 @@ def _main_update(dt):
     state.display_gear = apply_gear_display_offset(state.raw_gear, gear_display_offset)
     if state.display_gear is None:
         state.display_gear = 0
+    state.engine_rpm_source = str(
+        strategy.get("engine_rpm_source", vehicle.get("engine_rpm_source", "telemetry_clamped"))
+    ).strip().lower()
+    state.telemetry_clamped_engine_rpm = _telemetry_clamped_rpm(vehicle, strategy)
+    state.calculated_engine_rpm = _calculate_engine_rpm(vehicle, strategy)
     state.model_engine_rpm = _compute_model_engine_rpm(vehicle, strategy)
 
     v_ms = state.observed_speed_ms
@@ -866,9 +877,15 @@ def _main_update(dt):
     state.fuel_audit = {
         "t": _elapsed_time_s,
         "dt": dt,
+        "rpm_source": state.engine_rpm_source,
         "engine_on": state.engine_on,
         "observed_rpm": state.observed_rpm,
         "model_rpm": state.model_engine_rpm,
+        "calculated_rpm": state.calculated_engine_rpm,
+        "telemetry_clamped_rpm": state.telemetry_clamped_engine_rpm,
+        "model_raw_delta": state.model_engine_rpm - float(state.observed_rpm),
+        "calc_raw_delta": state.calculated_engine_rpm - float(state.observed_rpm),
+        "rear_tire_circumference_m": float(vehicle.get("rear_tire_circumference_m", 0.0)),
         "load": state.demand_load_ratio,
         "bsfc": state.demand_bsfc_g_per_kwh,
         "demand_engine_power_w": state.demand_engine_power_w,
@@ -878,6 +895,9 @@ def _main_update(dt):
         "measurement_fuel_used_ml": state.measurement_fuel_used_ml,
         "measurement_dist_m": state.measurement_dist_m,
         "avg_fuel_econ_km_per_l": state.avg_fuel_econ_km_per_l,
+        "measurement_active": state.measurement_active,
+        "laps_completed": state.laps_completed,
+        "lap_rows_len": len(state.lap_rows),
     }
 
     state.first_update = False
@@ -934,10 +954,13 @@ def _main_update(dt):
             if audit.get("avg_fuel_econ_km_per_l") is not None else "None"
         )
         _log(
-            "fuel audit t={t:.1f} dt={dt:.3f} engine_on={engine_on} observed_rpm={observed_rpm} model_rpm={model_rpm:.0f} "
+            "fuel audit t={t:.1f} dt={dt:.3f} rpm_source={rpm_source} engine_on={engine_on} raw_rpm={observed_rpm} "
+            "model_rpm={model_rpm:.0f} calculated_rpm={calculated_rpm:.0f} telemetry_clamped_rpm={telemetry_clamped_rpm:.0f} "
+            "model_raw_delta={model_raw_delta:.0f} calc_raw_delta={calc_raw_delta:.0f} rear_tire_circ={rear_tire_circumference_m:.3f} "
             "load={load:.3f} bsfc={bsfc:.1f} P_engine={demand_engine_power_w:.1f} mf_dot={mf_dot_g_s:.5f} "
             "vf_dot={vf_dot_ml_s:.5f} cumul={cumul_fuel_ml:.4f} meas_fuel={measurement_fuel_used_ml:.4f} "
-            "meas_dist={measurement_dist_m:.2f} avg_kmpl={avg_fuel_econ_km_per_l}".format(**audit),
+            "meas_dist={measurement_dist_m:.2f} avg_kmpl={avg_fuel_econ_km_per_l} measurement_active={measurement_active} "
+            "laps_completed={laps_completed} lap_rows={lap_rows_len}".format(**audit),
             force=True,
         )
 
