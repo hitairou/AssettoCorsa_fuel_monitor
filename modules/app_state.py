@@ -112,6 +112,8 @@ class AppState(object):
         self.session_restart_count = 0
         self.session_engine_on_time = 0.0
         self.session_dist_m = 0.0
+        self.session_id = ""
+        self.build_id = ""
 
         self.measurement_start_mode = "first_cross_sf"
         self.measurement_active = False
