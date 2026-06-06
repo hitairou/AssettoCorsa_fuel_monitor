@@ -145,13 +145,29 @@ def _power_graph_scale_from_state(state, strategy):
         ("hist_grade", "current_P_grade_term"),
     )
     samples = []
+    window_s = float(strategy.get("power_graph_window_s", 10.0))
+    now = _to_float_or_none(getattr(state, "render_time_s", None))
+    if now is None:
+        now = _to_float_or_none(getattr(state, "session_elapsed_time", 0.0)) or 0.0
     for hist_attr, current_attr in series_pairs:
         hist_buf = getattr(state, hist_attr, None)
+        time_buf = getattr(state, "hist_power_time", None)
         if hist_buf is not None:
-            for value in hist_buf.to_list():
+            values = hist_buf.to_list()
+            times = time_buf.to_list() if time_buf is not None else []
+            count = min(len(values), len(times))
+            values = values[-count:]
+            times = times[-count:]
+            for sample_time, value in zip(times, values):
                 value = _to_float_or_none(value)
-                if value is not None:
-                    samples.append(abs(value))
+                sample_time = _to_float_or_none(sample_time)
+                if value is None or sample_time is None:
+                    continue
+                if now - sample_time > window_s:
+                    continue
+                if now - sample_time < 0.0:
+                    continue
+                samples.append(abs(value))
         current_value = _to_float_or_none(getattr(state, current_attr, None))
         if current_value is not None:
             samples.append(abs(current_value))
@@ -467,6 +483,7 @@ def acUpdate(delta_t):
             main_update_ran = True
             state.accum_t = 0.0
 
+        state.render_time_s = _elapsed_time_s
         stage = "ui refresh"
         update_windows(state)
         _last_update_error = None
@@ -476,19 +493,27 @@ def acUpdate(delta_t):
             graph_diag = getattr(state, "graph_renderer_diag", {})
             engine_diag = graph_diag.get("hist_engine", {})
             accel_diag = graph_diag.get("hist_accel", {})
+            engine_meta = engine_diag.get("meta", {})
+            accel_meta = accel_diag.get("meta", {})
             _log(
-                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} hist_engine={3} bsfc_trace={4} rpm={5} engine_on={6} cur_load={7} "
-                "scale={8:.1f} peak={9:.1f} target={10:.1f} "
-                "engine_tail_prev={11} engine_tail_curr={12} cur_P_engine={13} "
-                "accel_tail_prev={14} accel_tail_curr={15} cur_P_accel={16} graph_err={17} last_render={18}".format(
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} now={3:.3f} window={4:.1f} hist_time={5} hist_engine={6} bsfc_trace={7} rpm={8} engine_on={9} cur_load={10} "
+                "last_time={11} last_value={12} "
+                "scale={13:.1f} peak={14:.1f} target={15:.1f} "
+                "engine_tail_prev={16} engine_tail_curr={17} cur_P_engine={18} "
+                "accel_tail_prev={19} accel_tail_curr={20} cur_P_accel={21} graph_err={22} last_render={23}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
+                    float(getattr(state, "render_time_s", 0.0) or 0.0),
+                    float(state.strategy.get("power_graph_window_s", 10.0)),
+                    len(state.hist_power_time),
                     len(state.hist_engine),
                     len(state.bsfc_trace_rpm),
                     int(state.observed_rpm),
                     int(state.engine_on),
                     state.current_load_display_ratio,
+                    engine_meta.get("last_time"),
+                    engine_meta.get("last_value"),
                     float(getattr(state, "power_graph_scale_w", 0.0)),
                     float(getattr(state, "power_graph_peak_power_w", 0.0) or 0.0),
                     float(getattr(state, "power_graph_scale_raw_w", 0.0) or 0.0),
@@ -576,6 +601,7 @@ def _main_update(dt):
     state.hist_aero.append(P_aero)
     state.hist_accel.append(P_accel_t)
     state.hist_grade.append(P_grade_t)
+    state.hist_power_time.append(_elapsed_time_s)
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(

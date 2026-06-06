@@ -98,6 +98,7 @@ class AppState(object):
         self.hist_aero = RingBuffer(_HIST_LEN)
         self.hist_accel = RingBuffer(_HIST_LEN)
         self.hist_grade = RingBuffer(_HIST_LEN)
+        self.hist_power_time = RingBuffer(_HIST_LEN)
 
         self.bsfc_trace_rpm = RingBuffer(_HIST_LEN)
         self.bsfc_trace_load = RingBuffer(_HIST_LEN)
@@ -109,6 +110,7 @@ class AppState(object):
         # Aggregate / cumulative session values
         # ------------------------------------------------------------------
         self.session_elapsed_time = 0.0
+        self.render_time_s = 0.0
         self.session_restart_count = 0
         self.session_engine_on_time = 0.0
         self.session_dist_m = 0.0
