@@ -6,7 +6,7 @@ from modules import graph_renderer
 from modules.panel_common import add_label, move, set_color, set_text
 
 
-WINDOW_SIZE = (720, 500)
+WINDOW_SIZE = (720, 460)
 PADDING = 8
 GRAPH_H = 112
 BAR_LABEL_W = 126
@@ -20,7 +20,7 @@ FORMULA_FONT = 8
 ROW_FONT = 10
 HEADER_FONT = 9
 
-FORMULA_H = 10
+FORMULA_H = 11
 ROW_H = 12
 ROW_BLOCK_H = 25
 GROUP_GAP = 10
@@ -42,12 +42,12 @@ ROAD_LOAD_ROWS = [
 ]
 
 SUMMARY_ROWS = [
-    ("wheel", "Wheel Demand [W]", (1.0, 1.0, 1.0, 1.0), "positive", 2),
+    ("wheel", "Wheel Demand [W]", (1.0, 1.0, 1.0, 1.0), "positive", 1),
 ]
 
 ENGINE_ROWS = [
-    ("engine_supply", "Engine Supply [W]", (0.85, 0.85, 0.92, 1.0), "positive", 2),
-    ("drivetrain_loss", "Drivetrain Loss [W]", (1.0, 0.75, 0.25, 1.0), "positive", 2),
+    ("engine_supply", "Engine Supply [W]", (0.85, 0.85, 0.92, 1.0), "positive", 1),
+    ("drivetrain_loss", "Drivetrain Loss [W]", (1.0, 0.75, 0.25, 1.0), "positive", 1),
     ("drivetrain_loss_energy", "Drivetrain Loss Energy [kJ]", (0.35, 0.75, 1.0, 1.0), "positive", 1),
 ]
 
@@ -74,7 +74,8 @@ def layout(window_size):
     graph_y = TITLE_SAFE_TOP + 4
     graph_w = width - graph_x - PADDING
     bar_graph_x = PADDING + BAR_LABEL_W + BAR_GAP
-    bar_graph_w = width - bar_graph_x - PADDING - BAR_VALUE_W - BAR_GAP
+    bar_value_x = width - PADDING - BAR_VALUE_W
+    bar_graph_w = bar_value_x - BAR_GAP - bar_graph_x
     legend_y = graph_y + GRAPH_H + AXIS_H + 8
 
     rows = []
@@ -96,7 +97,7 @@ def layout(window_size):
             }
         )
         for key, title, color, mode, formula_lines in group_rows:
-            formula_h = FORMULA_H * formula_lines + max(0, formula_lines - 1) * 2
+            formula_h = FORMULA_H
             bar_y = current_y + formula_h + FORMULA_GAP
             row_h = max(BAR_H, 10)
             rows.append(
@@ -109,7 +110,7 @@ def layout(window_size):
                     "formula_y": current_y,
                     "formula_h": formula_h,
                     "formula_x": bar_graph_x,
-                    "formula_w": bar_graph_w - BAR_VALUE_W - BAR_GAP - 8,
+                    "formula_w": bar_value_x - BAR_GAP - bar_graph_x,
                     "row_y": bar_y,
                     "title_y": bar_y,
                     "value_y": bar_y,
@@ -136,7 +137,7 @@ def layout(window_size):
         "graph_y": graph_y,
         "graph_w": graph_w,
         "bar_label_x": PADDING,
-        "bar_value_x": bar_graph_x + bar_graph_w + BAR_GAP,
+        "bar_value_x": bar_value_x,
         "bar_graph_x": bar_graph_x,
         "bar_graph_w": bar_graph_w,
         "legend_y": legend_y,
@@ -239,6 +240,8 @@ def update(labels, state):
     for row in geo["rows"]:
         row_key = row["key"]
         row_color = row["color"]
+        move(labels["lbl_" + row_key], geo["bar_label_x"], row["title_y"], BAR_LABEL_W, ROW_H)
+        move(labels["val_" + row_key], geo["bar_value_x"], row["value_y"], BAR_VALUE_W, ROW_H)
         update_formula_tokens(labels, row, state, row_color)
         set_color(labels["lbl_" + row_key], row_color)
         set_color(labels["val_" + row_key], row_color if row_key != "drivetrain_loss" else (1.0, 0.75, 0.25, 1.0))
@@ -346,28 +349,40 @@ def _trim_formula_layout(laid_out, formula_x, formula_y, formula_w, line_h, max_
     if last_y <= formula_y + (max_lines - 1) * (line_h + 1):
         return laid_out
     if max_lines <= 1:
-        return _truncate_to_result_only(laid_out, formula_x, formula_y, formula_w)
+        return _truncate_to_fit(laid_out, formula_x, formula_y, formula_w)
     return laid_out
 
 
-def _truncate_to_result_only(laid_out, formula_x, formula_y, formula_w):
-    result_token = None
-    for token in reversed(laid_out):
-        if token["style"] == "result":
-            result_token = token
+def _truncate_to_fit(laid_out, formula_x, formula_y, formula_w):
+    clipped = []
+    cursor_x = formula_x
+    for token in laid_out:
+        token_w = min(_estimate_token_width(token["text"]), formula_w)
+        if cursor_x + token_w > formula_x + formula_w:
             break
-    if result_token is None:
-        return laid_out[:1]
-    result_w = min(_estimate_token_width(result_token["text"]), formula_w)
-    return [
-        {
-            "text": result_token["text"],
-            "style": result_token["style"],
-            "x": formula_x,
-            "y": formula_y,
-            "w": result_w,
-        }
-    ]
+        clipped.append(
+            {
+                "text": token["text"],
+                "style": token["style"],
+                "x": cursor_x,
+                "y": formula_y,
+                "w": token_w,
+            }
+        )
+        cursor_x += token_w
+    if clipped and clipped[-1]["text"] != "…":
+        ellipsis_w = _estimate_token_width("…")
+        if cursor_x + ellipsis_w <= formula_x + formula_w:
+            clipped.append(
+                {
+                    "text": "…",
+                    "style": "const",
+                    "x": cursor_x,
+                    "y": formula_y,
+                    "w": ellipsis_w,
+                }
+            )
+    return clipped if clipped else laid_out[:1]
 
 
 def _choose_formula_tokens(row_key, state, formula_w, max_lines):
@@ -409,59 +424,46 @@ def _formula_tokens_for_row(row_key, state, compact=False):
 
     if row_key == "roll":
         if compact == "minimal":
-            return [
-                ("Roll = ", "var"),
-                ("Crr × m × g × cosθ × v", "const"),
-                (" = ", "const"),
-                (fmt_float(roll, 1) + "W", "result"),
-            ]
+            return [("Crr×m×g×cosθ×v", "const")]
         if compact:
             return [
-                ("Roll = ", "var"),
                 ("Crr[" + fmt_float(crr, 4) + "]", "const"),
                 ("×", "const"),
-                ("m[" + fmt_float(mass, 2) + "]", "const"),
+                ("m[" + fmt_float(mass, 1) + "]", "const"),
                 ("×", "const"),
                 ("g[" + fmt_float(g, 2) + "]", "const"),
-                ("×cosθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
-                (" = ", "const"),
-                (fmt_float(roll, 1) + "W", "result"),
+                ("×cosθ[", "const"),
+                (fmt_float(theta, 3), "var"),
+                ("]×", "const"),
+                ("v[", "const"),
+                (fmt_float(v_ms, 2), "var"),
+                ("]", "const"),
             ]
         return [
-            ("Roll [W] = ", "var"),
             ("Crr [" + fmt_float(crr, 4) + "]", "const"),
             (" × ", "const"),
-            ("m [" + fmt_float(mass, 2) + "]", "const"),
+            ("m[" + fmt_float(mass, 1) + "]", "const"),
             (" × ", "const"),
-            ("g [" + fmt_float(g, 2) + "]", "const"),
-            (" × cos(", "const"),
-            ("θ [" + fmt_float(theta, 3) + "]", "var"),
-            (") × ", "const"),
-            ("v [" + fmt_float(v_ms, 2) + "]", "var"),
-            (" = ", "const"),
-            (fmt_float(roll, 1) + " W", "result"),
+            ("g[" + fmt_float(g, 2) + "]", "const"),
+            (" × cosθ[", "const"),
+            (fmt_float(theta, 3), "var"),
+            ("] × v[", "const"),
+            (fmt_float(v_ms, 2), "var"),
+            ("]", "const"),
         ]
     if row_key == "aero":
         if compact == "minimal":
-            return [
-                ("Aero = ", "var"),
-                ("0.5×ρ×Cd×A×v^3", "const"),
-                (" = ", "const"),
-                (fmt_float(aero, 1) + "W", "result"),
-            ]
+            return [("0.5×ρ×Cd×A×v^3", "const")]
         if compact:
             return [
-                ("Aero = ", "var"),
                 ("0.5×ρ[" + fmt_float(rho, 3) + "]", "const"),
                 ("×Cd[" + fmt_float(cd, 3) + "]", "const"),
                 ("×A[" + fmt_float(area, 4) + "]", "const"),
-                ("×v[" + fmt_float(v_ms, 2) + "]^3", "var"),
-                (" = ", "const"),
-                (fmt_float(aero, 1) + "W", "result"),
+                ("×v[", "const"),
+                (fmt_float(v_ms, 2), "var"),
+                ("]^3", "const"),
             ]
         return [
-            ("Aero [W] = ", "var"),
             ("0.5", "const"),
             (" × ", "const"),
             ("ρ [" + fmt_float(rho, 3) + "]", "const"),
@@ -472,164 +474,129 @@ def _formula_tokens_for_row(row_key, state, compact=False):
             (" × ", "const"),
             ("v [" + fmt_float(v_ms, 2) + "]", "var"),
             ("^3", "const"),
-            (" = ", "const"),
-            (fmt_float(aero, 1) + " W", "result"),
         ]
     if row_key == "accel":
         if compact == "minimal":
-            return [
-                ("Accel = ", "var"),
-                ("m×a×v", "const"),
-                (" = ", "const"),
-                (fmt_float(accel, 1) + "W", "result"),
-            ]
+            return [("m×a×v", "const")]
         if compact:
             return [
-                ("Accel = ", "var"),
-                ("m[" + fmt_float(mass, 2) + "]", "const"),
-                ("×a[" + fmt_float(accel_ms2, 3) + "]", "var"),
-                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
-                (" = ", "const"),
-                (fmt_float(accel, 1) + "W", "result"),
+                ("m[" + fmt_float(mass, 1) + "]", "const"),
+                ("×a[", "const"),
+                (fmt_float(accel_ms2, 3), "var"),
+                ("]×v[", "const"),
+                (fmt_float(v_ms, 2), "var"),
+                ("]", "const"),
             ]
         return [
-            ("Accel [W] = ", "var"),
-            ("m [" + fmt_float(mass, 2) + "]", "const"),
+            ("m[" + fmt_float(mass, 1) + "]", "const"),
             (" × ", "const"),
-            ("a [" + fmt_float(accel_ms2, 3) + "]", "var"),
+            ("a[" + fmt_float(accel_ms2, 3) + "]", "var"),
             (" × ", "const"),
-            ("v [" + fmt_float(v_ms, 2) + "]", "var"),
-            (" = ", "const"),
-            (fmt_float(accel, 1) + " W", "result"),
+            ("v[" + fmt_float(v_ms, 2) + "]", "var"),
         ]
     if row_key == "grade":
         if compact == "minimal":
-            return [
-                ("Grade = ", "var"),
-                ("m×g×sinθ×v", "const"),
-                (" = ", "const"),
-                (fmt_float(grade, 1) + "W", "result"),
-            ]
+            return [("m×g×sinθ×v", "const")]
         if compact:
             return [
-                ("Grade = ", "var"),
-                ("m[" + fmt_float(mass, 2) + "]", "const"),
+                ("m[" + fmt_float(mass, 1) + "]", "const"),
                 ("×g[" + fmt_float(g, 2) + "]", "const"),
-                ("×sinθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
-                (" = ", "const"),
-                (fmt_float(grade, 1) + "W", "result"),
+                ("×sinθ[", "const"),
+                (fmt_float(theta, 3), "var"),
+                ("]×v[", "const"),
+                (fmt_float(v_ms, 2), "var"),
+                ("]", "const"),
             ]
         return [
-            ("Grade [W] = ", "var"),
-            ("m [" + fmt_float(mass, 2) + "]", "const"),
+            ("m[" + fmt_float(mass, 1) + "]", "const"),
             (" × ", "const"),
-            ("g [" + fmt_float(g, 2) + "]", "const"),
-            (" × sin(", "const"),
-            ("θ [" + fmt_float(theta, 3) + "]", "var"),
-            (") × ", "const"),
-            ("v [" + fmt_float(v_ms, 2) + "]", "var"),
-            (" = ", "const"),
-            (fmt_float(grade, 1) + " W", "result"),
+            ("g[" + fmt_float(g, 2) + "]", "const"),
+            (" × sinθ[", "const"),
+            (fmt_float(theta, 3), "var"),
+            ("] × v[", "const"),
+            (fmt_float(v_ms, 2), "var"),
+            ("]", "const"),
         ]
     if row_key == "wheel":
         if compact == "minimal":
-            return [
-                ("Wheel = ", "var"),
-                ("max(sum,0)", "const"),
-                (" = ", "const"),
-                (fmt_float(wheel, 1) + "W", "result"),
-            ]
+            return [("max(R+A+Ac+G,0)", "const")]
         if compact:
             return [
-                ("Wheel = ", "var"),
                 ("max(", "const"),
-                ("R[" + fmt_float(roll, 1) + "]", "var"),
-                ("+A[" + fmt_float(aero, 1) + "]", "var"),
-                ("+Ac[" + fmt_float(accel, 1) + "]", "var"),
-                ("+G[" + fmt_float(grade, 1) + "]", "var"),
+                ("R[", "const"),
+                (fmt_float(roll, 1), "var"),
+                ("]+A[", "const"),
+                (fmt_float(aero, 1), "var"),
+                ("]+Ac[", "const"),
+                (fmt_float(accel, 1), "var"),
+                ("]+G[", "const"),
+                (fmt_float(grade, 1), "var"),
+                ("]", "const"),
                 (",0)", "const"),
-                (" = ", "const"),
-                (fmt_float(wheel, 1) + "W", "result"),
             ]
         return [
-            ("Wheel Demand [W] = ", "var"),
             ("max(", "const"),
-            ("Roll [" + fmt_float(roll, 1) + "]", "var"),
-            (" + ", "const"),
-            ("Aero [" + fmt_float(aero, 1) + "]", "var"),
-            (" + ", "const"),
-            ("Accel [" + fmt_float(accel, 1) + "]", "var"),
-            (" + ", "const"),
-            ("Grade [" + fmt_float(grade, 1) + "]", "var"),
-            (", 0)", "const"),
-            (" = ", "const"),
-            (fmt_float(wheel, 1) + " W", "result"),
+            ("Roll[", "const"),
+            (fmt_float(roll, 1), "var"),
+            ("]+Aero[", "const"),
+            (fmt_float(aero, 1), "var"),
+            ("]+Accel[", "const"),
+            (fmt_float(accel, 1), "var"),
+            ("]+Grade[", "const"),
+            (fmt_float(grade, 1), "var"),
+            ("]", "const"),
+            (",0)", "const"),
         ]
     if row_key == "engine_supply":
         if compact == "minimal":
-            return [
-                ("Eng Supply = ", "var"),
-                ("Wheel/ηd", "const"),
-                (" = ", "const"),
-                (fmt_float(engine_supply, 1) + "W", "result"),
-            ]
+            return [("Wheel/ηd", "const")]
         if compact:
             return [
-                ("Eng Supply = ", "var"),
-                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                ("/ηd[" + fmt_float(eta_d, 3) + "]", "const"),
-                (" = ", "const"),
-                (fmt_float(engine_supply, 1) + "W", "result"),
+                ("Wheel[", "const"),
+                (fmt_float(wheel, 1), "var"),
+                ("]/", "const"),
+                ("ηd[", "const"),
+                (fmt_float(eta_d, 3), "var"),
+                ("]", "const"),
             ]
         return [
-            ("Engine Supply [W] = ", "var"),
-            ("engine_on ? Wheel Demand [" + fmt_float(wheel, 1) + "] / ηd [" + fmt_float(eta_d, 3) + "] : 0", "const"),
-            (" = ", "const"),
-            (fmt_float(engine_supply, 1) + " W", "result"),
+            ("engine_on ? Wheel[", "const"),
+            (fmt_float(wheel, 1), "var"),
+            ("] / ηd[", "const"),
+            (fmt_float(eta_d, 3), "var"),
+            ("] : 0", "const"),
         ]
     if row_key == "drivetrain_loss":
         if compact == "minimal":
-            return [
-                ("Drivetrain Loss = ", "var"),
-                ("Eng-Wheel", "const"),
-                (" = ", "const"),
-                (fmt_float(drivetrain_loss, 1) + "W", "result"),
-            ]
+            return [("Eng-Wheel", "const")]
         if compact:
             return [
-                ("Drivetrain Loss = ", "var"),
-                ("Eng[" + fmt_float(engine_supply, 1) + "]", "var"),
-                ("-Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                (" = ", "const"),
-                (fmt_float(drivetrain_loss, 1) + "W", "result"),
+                ("Eng[", "const"),
+                (fmt_float(engine_supply, 1), "var"),
+                ("]-Wheel[", "const"),
+                (fmt_float(wheel, 1), "var"),
+                ("]", "const"),
             ]
         return [
-            ("Drivetrain Loss [W] = ", "var"),
-            ("engine_on ? Engine Supply [" + fmt_float(engine_supply, 1) + "] - Wheel Demand [" + fmt_float(wheel, 1) + "] : 0", "const"),
-            (" = ", "const"),
-            (fmt_float(drivetrain_loss, 1) + " W", "result"),
+            ("engine_on ? Eng[", "const"),
+            (fmt_float(engine_supply, 1), "var"),
+            ("] - Wheel[", "const"),
+            (fmt_float(wheel, 1), "var"),
+            ("] : 0", "const"),
         ]
     if row_key == "drivetrain_loss_energy":
         if compact == "minimal":
-            return [
-                ("Loss Energy = ", "var"),
-                ("∫Loss dt/1000", "const"),
-                (" = ", "const"),
-                (fmt_float(loss_energy_kj, 2) + "kJ", "result"),
-            ]
+            return [("∫Loss dt/1000", "const")]
         if compact:
             return [
-                ("Loss Energy = ", "var"),
-                ("∫[" + fmt_float(drivetrain_loss, 1) + "]dt/1000", "const"),
-                (" = ", "const"),
-                (fmt_float(loss_energy_kj, 2) + "kJ", "result"),
+                ("∫Loss[", "const"),
+                (fmt_float(drivetrain_loss, 1), "var"),
+                ("]dt/1000", "const"),
             ]
         return [
-            ("Drivetrain Loss Energy [kJ] = ", "var"),
-            ("∫ Drivetrain Loss [" + fmt_float(drivetrain_loss, 1) + " W] dt / 1000", "const"),
-            (" = ", "const"),
-            (fmt_float(loss_energy_kj, 2) + " kJ", "result"),
+            ("∫Loss[", "const"),
+            (fmt_float(drivetrain_loss, 1), "var"),
+            ("] dt / 1000", "const"),
         ]
     return [("", "const")]
 

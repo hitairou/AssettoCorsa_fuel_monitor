@@ -38,15 +38,6 @@ def _draw_power_bar(state, rect, row_geos):
     if not row_geos:
         return
 
-    _draw_background(rect)
-
-    mid_x = x + w / 2.0
-    ac.glColor4f(0.7, 0.7, 0.7, 0.9)
-    ac.glBegin(_GL_LINES)
-    ac.glVertex2f(mid_x, y + 2)
-    ac.glVertex2f(mid_x, y + h - 2)
-    ac.glEnd()
-
     power_scale = max(float(getattr(state, "power_graph_scale_w", POWER_SCALE)), 500.0)
     values = {
         "roll": state.demand_roll_power_w,
@@ -63,7 +54,16 @@ def _draw_power_bar(state, rect, row_geos):
         power_w = float(values.get(key, 0.0))
         r, g, b, _alpha = row["color"]
         width_px = _signed_width(power_w, w, power_scale, row["mode"])
-        _draw_bar(mid_x, row["bar_y"], row["bar_h"], width_px, r, g, b, row["mode"])
+        bg_rect = (x, row["bar_y"] - 1.0, w, row["bar_h"] + 2.0)
+        _draw_background(bg_rect)
+        center_x = x + w / 2.0
+        if row["mode"] == "signed":
+            ac.glColor4f(0.7, 0.7, 0.7, 0.9)
+            ac.glBegin(_GL_LINES)
+            ac.glVertex2f(center_x, bg_rect[1] + 1.0)
+            ac.glVertex2f(center_x, bg_rect[1] + bg_rect[3] - 1.0)
+            ac.glEnd()
+        _draw_bar(center_x, row["bar_y"], row["bar_h"], width_px, r, g, b, row["mode"])
 
 
 def _draw_energy_bar(state, rect, row_geo):
