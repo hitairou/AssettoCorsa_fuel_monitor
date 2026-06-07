@@ -15,9 +15,9 @@ except (ImportError, AttributeError):
 
 
 Y_MAX = 2000.0
-GRAPH_RENDERER_REV = "power-graph-segments-003"
+GRAPH_RENDERER_REV = "power-graph-wheel-004"
 SERIES = [
-    ("hist_engine", "current_P_engine", 1.0, 1.0, 1.0),
+    ("hist_wheel", "current_P_wheel", 1.0, 1.0, 1.0),
     ("hist_roll", "current_P_roll", 0.3, 1.0, 0.3),
     ("hist_aero", "current_P_aero", 0.3, 0.8, 1.0),
     ("hist_accel", "current_P_accel_term", 1.0, 0.6, 0.2),

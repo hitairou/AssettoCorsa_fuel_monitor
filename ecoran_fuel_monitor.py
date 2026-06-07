@@ -36,7 +36,7 @@ from modules.bsfc_interp import (
 from modules.data_loader import config_path, load_strategy_config, load_vehicle_config
 from modules.display_format import apply_gear_display_offset
 from modules.fuel_integrator import calc_km_per_l, compute_fuel_flow, euler_step
-from modules.forces import calc_forces
+from modules.forces import calc_force_components, calc_forces
 from modules.grade_estimator import init_estimator
 from modules.lap_tracker import init_tracker
 from modules.rpm_load import calc_load
@@ -155,7 +155,7 @@ def _power_graph_scale_from_state(state, strategy):
 
     samples = []
     series_pairs = (
-        ("hist_engine", "current_P_engine"),
+        ("hist_wheel", "current_P_wheel"),
         ("hist_roll", "current_P_roll"),
         ("hist_aero", "current_P_aero"),
         ("hist_accel", "current_P_accel_term"),
@@ -188,6 +188,7 @@ def _compute_build_id():
         os.path.join(_APP_DIR, "modules", "panel_power.py"),
         os.path.join(_APP_DIR, "modules", "graph_renderer.py"),
         os.path.join(_APP_DIR, "modules", "gauge_renderer.py"),
+        os.path.join(_APP_DIR, "modules", "forces.py"),
         os.path.join(_APP_DIR, "modules", "app_state.py"),
         os.path.join(_APP_DIR, "modules", "history_buffers.py"),
         os.path.join(_APP_DIR, "modules", "bsfc_interp.py"),
@@ -273,6 +274,7 @@ def _set_bsfc_map_metadata(filename, interpolator):
 def _clear_power_history(reason=""):
     for attr in (
         "hist_engine",
+        "hist_wheel",
         "hist_roll",
         "hist_aero",
         "hist_accel",
@@ -719,27 +721,27 @@ def acUpdate(delta_t):
         if _cfg_bool(state.strategy.get("debug_mode", 0), False) and (_elapsed_time_s - _last_runtime_diag_log_s >= 1.0):
             _last_runtime_diag_log_s = _elapsed_time_s
             graph_diag = getattr(state, "graph_renderer_diag", {})
-            engine_meta = graph_diag.get("hist_engine", {})
+            wheel_meta = graph_diag.get("hist_wheel", {})
             accel_meta = graph_diag.get("hist_accel", {})
             _log(
-                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} epoch={3} hist_engine_len={4} hist_engine_last={5} cur_P_engine={6} "
+                "runtime diag dt={0:.3f} accum_t={1:.3f} main_update={2} epoch={3} hist_wheel_len={4} hist_wheel_last={5} cur_P_wheel={6} "
                 "hist_accel_len={7} hist_accel_last={8} cur_P_accel={9} scale={10:.1f} points={11} last_hist={12} current={13} "
                 "graph_err={14} last_render={15}".format(
                     dt,
                     state.accum_t,
                     int(main_update_ran),
                     int(getattr(state, "power_history_epoch", 0)),
-                    len(state.hist_engine),
-                    engine_meta.get("last_value"),
-                    state.current_P_engine,
+                    len(state.hist_wheel),
+                    wheel_meta.get("last_value"),
+                    state.current_P_wheel,
                     len(state.hist_accel),
                     accel_meta.get("last_value"),
                     state.current_P_accel_term,
                     float(getattr(state, "power_graph_scale_w", 0.0)),
-                    engine_meta.get("points_count"),
-                    engine_meta.get("last_history_point"),
-                    engine_meta.get("current_point"),
-                    engine_meta.get("error") or accel_meta.get("error") or "",
+                    wheel_meta.get("points_count"),
+                    wheel_meta.get("last_history_point"),
+                    wheel_meta.get("current_point"),
+                    wheel_meta.get("error") or accel_meta.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
             )
@@ -801,11 +803,21 @@ def _main_update(dt):
             _bsfc_accel_deriv.reset()
         _clear_power_history("engine start")
 
-    (F_req, P_wheel, theta,
-     P_roll, P_aero, P_accel_t, P_grade_t) = calc_forces(
-        v_ms, accel, grade_smooth, vehicle
-    )
+    force_data = calc_force_components(v_ms, accel, grade_smooth, vehicle)
+    F_req = force_data["F_req"]
+    P_wheel = force_data["P_wheel"]
+    theta = force_data["theta"]
+    P_roll = force_data["P_roll"]
+    P_aero = force_data["P_aero"]
+    P_accel_t = force_data["P_accel_term"]
+    P_grade_t = force_data["P_grade_term"]
 
+    state.force_roll_n = force_data["F_roll"]
+    state.force_aero_n = force_data["F_aero"]
+    state.force_grade_n = force_data["F_grav"]
+    state.force_inertia_n = force_data["F_inertia"]
+    state.force_req_n = F_req
+    state.accel_ms2 = accel
     state.demand_force_n = F_req
     state.demand_wheel_power_w = P_wheel
     state.theta_rad = theta
@@ -816,10 +828,12 @@ def _main_update(dt):
 
     eta_d = float(vehicle.get("drivetrain_efficiency", 0.9))
     demand_engine_power_w = max(P_wheel / max(eta_d, 1e-9), 0.0)
+    engine_supply_w = demand_engine_power_w if state.engine_on and P_wheel > 0.0 else 0.0
+    drivetrain_loss_w = max(engine_supply_w - P_wheel, 0.0)
     state.demand_engine_power_w = demand_engine_power_w
-
-    net_energy_rate_w = demand_engine_power_w - P_roll - P_aero - P_accel_t - P_grade_t
-    state.net_energy_balance_j += net_energy_rate_w * dt
+    state.engine_supply_power_w = engine_supply_w
+    state.drivetrain_loss_power_w = drivetrain_loss_w
+    state.drivetrain_loss_energy_j += drivetrain_loss_w * dt
 
     engaged_raw_gear = state.raw_gear if state.raw_gear > 0 else 0
     i_total, T_req, demand_load = calc_load(
@@ -929,13 +943,17 @@ def _main_update(dt):
     state.bsfc = state.demand_bsfc_g_per_kwh
     state.mf_dot = state.demand_fuel_mass_flow_g_s
     state.vf_dot = state.demand_fuel_flow_ml_s
+    state.current_P_wheel = state.demand_wheel_power_w
     state.current_P_roll = state.demand_roll_power_w
     state.current_P_aero = state.demand_aero_power_w
     state.current_P_accel_term = state.demand_accel_power_w
     state.current_P_grade_term = state.demand_grade_power_w
     state.current_P_engine = state.demand_engine_power_w
-    state.current_E_store = state.net_energy_balance_j
+    state.current_P_engine_supply = state.engine_supply_power_w
+    state.current_P_drivetrain_loss = state.drivetrain_loss_power_w
+    state.current_E_store = state.drivetrain_loss_energy_j
 
+    state.hist_wheel.append(state.current_P_wheel)
     state.hist_engine.append(state.current_P_engine)
     state.hist_roll.append(state.current_P_roll)
     state.hist_aero.append(state.current_P_aero)
@@ -944,6 +962,8 @@ def _main_update(dt):
     state.power_hist_debug = {
         "append_time": _elapsed_time_s,
         "power_history_epoch": int(getattr(state, "power_history_epoch", 0)),
+        "hist_wheel_len": len(state.hist_wheel),
+        "hist_wheel_last": state.current_P_wheel,
         "hist_engine_len": len(state.hist_engine),
         "hist_engine_last": state.current_P_engine,
         "hist_roll_len": len(state.hist_roll),
@@ -957,7 +977,7 @@ def _main_update(dt):
     }
 
     state.power_graph_scale_w, state.power_graph_peak_power_w, state.power_graph_scale_raw_w = _power_graph_scale_from_state(state, strategy)
-    state.net_energy_balance_scale_j = max(5000.0, abs(state.net_energy_balance_j) * 1.15)
+    state.net_energy_balance_scale_j = max(5000.0, abs(state.drivetrain_loss_energy_j) * 1.15)
     state.fuel_audit = {
         "t": _elapsed_time_s,
         "dt": dt,
@@ -977,6 +997,9 @@ def _main_update(dt):
         "low_load_correction_enabled": state.low_load_correction_enabled,
         "bsfc": state.demand_bsfc_g_per_kwh,
         "demand_engine_power_w": state.demand_engine_power_w,
+        "engine_supply_power_w": state.engine_supply_power_w,
+        "drivetrain_loss_power_w": state.drivetrain_loss_power_w,
+        "drivetrain_loss_energy_j": state.drivetrain_loss_energy_j,
         "mf_dot_g_s": state.demand_fuel_mass_flow_g_s,
         "vf_dot_ml_s": state.demand_fuel_flow_ml_s,
         "cumul_fuel_ml": state.cumul_fuel_ml,

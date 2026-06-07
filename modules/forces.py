@@ -6,7 +6,7 @@ import math
 _EPSILON = 1e-9
 
 
-def calc_forces(v_ms, accel_ms2, grade_smooth, vehicle):
+def calc_force_components(v_ms, accel_ms2, grade_smooth, vehicle):
     """
     Compute required drive force, wheel power, and individual power components.
 
@@ -19,13 +19,18 @@ def calc_forces(v_ms, accel_ms2, grade_smooth, vehicle):
 
     Returns
     -------
-    F_req        : required longitudinal force [N]  (signed)
-    P_wheel      : wheel power [W]                  (>= 0, driving only)
-    theta        : road inclination angle [rad]
-    P_roll       : rolling resistance power [W]     (always >= 0)
-    P_aero       : aerodynamic drag power [W]       (always >= 0)
-    P_accel_term : inertia power term [W]           (signed; + = accelerating)
-    P_grade_term : gravity grade power term [W]     (signed; + = uphill)
+    dict with:
+        theta        : road inclination angle [rad]
+        F_roll       : rolling resistance force [N]
+        F_aero       : aerodynamic drag force [N]
+        F_grav       : gravity grade force [N]
+        F_inertia    : inertia force [N]
+        F_req        : required longitudinal force [N]  (signed)
+        P_roll       : rolling resistance power [W]     (always >= 0)
+        P_aero       : aerodynamic drag power [W]       (always >= 0)
+        P_accel_term : inertia power term [W]           (signed; + = accelerating)
+        P_grade_term : gravity grade power term [W]     (signed; + = uphill)
+        P_wheel      : wheel power [W]                  (>= 0, driving only)
     """
     m   = float(vehicle.get("mass_total",   98.65))
     crr = float(vehicle.get("crr",          0.0025))
@@ -53,4 +58,29 @@ def calc_forces(v_ms, accel_ms2, grade_smooth, vehicle):
     P_accel_term = F_inertia * v_ms   # signed
     P_grade_term = F_grav    * v_ms   # signed
 
-    return F_req, P_wheel, theta, P_roll, P_aero, P_accel_term, P_grade_term
+    return {
+        "theta": theta,
+        "F_roll": F_roll,
+        "F_aero": F_aero,
+        "F_grav": F_grav,
+        "F_inertia": F_inertia,
+        "F_req": F_req,
+        "P_roll": P_roll,
+        "P_aero": P_aero,
+        "P_accel_term": P_accel_term,
+        "P_grade_term": P_grade_term,
+        "P_wheel": P_wheel,
+    }
+
+
+def calc_forces(v_ms, accel_ms2, grade_smooth, vehicle):
+    data = calc_force_components(v_ms, accel_ms2, grade_smooth, vehicle)
+    return (
+        data["F_req"],
+        data["P_wheel"],
+        data["theta"],
+        data["P_roll"],
+        data["P_aero"],
+        data["P_accel_term"],
+        data["P_grade_term"],
+    )

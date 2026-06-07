@@ -62,12 +62,15 @@ class AppState(object):
         self.demand_force_n = 0.0
         self.demand_wheel_power_w = 0.0
         self.demand_engine_power_w = 0.0
+        self.engine_supply_power_w = 0.0
+        self.drivetrain_loss_power_w = 0.0
         self.demand_required_torque_nm = 0.0
         self.demand_load_ratio = 0.0
         self.demand_bsfc_raw_g_per_kwh = 400.0
         self.demand_bsfc_g_per_kwh = 400.0
         self.demand_fuel_mass_flow_g_s = 0.0
         self.demand_fuel_flow_ml_s = 0.0
+        self.drivetrain_loss_energy_j = 0.0
 
         self.current_bsfc_raw_display_g_per_kwh = None
         self.current_bsfc_display_g_per_kwh = None
@@ -95,17 +98,26 @@ class AppState(object):
         self.bsfc = 400.0
         self.mf_dot = 0.0
         self.vf_dot = 0.0
+        self.force_roll_n = 0.0
+        self.force_aero_n = 0.0
+        self.force_inertia_n = 0.0
+        self.force_grade_n = 0.0
+        self.force_req_n = 0.0
+        self.current_P_wheel = 0.0
         self.current_P_roll = 0.0
         self.current_P_aero = 0.0
         self.current_P_accel_term = 0.0
         self.current_P_grade_term = 0.0
         self.current_P_engine = 0.0
+        self.current_P_engine_supply = 0.0
+        self.current_P_drivetrain_loss = 0.0
         self.current_E_store = 0.0
 
         # ------------------------------------------------------------------
         # Histories
         # ------------------------------------------------------------------
         self.hist_engine = RingBuffer(_HIST_LEN)
+        self.hist_wheel = RingBuffer(_HIST_LEN)
         self.hist_roll = RingBuffer(_HIST_LEN)
         self.hist_aero = RingBuffer(_HIST_LEN)
         self.hist_accel = RingBuffer(_HIST_LEN)

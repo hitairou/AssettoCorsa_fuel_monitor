@@ -108,6 +108,18 @@ should not be public.
   changing it caused wheelspin/contact instability.
 - Raw RPM and calculated RPM can differ because AC physics still uses the car
   mod tyre setup while the fuel model uses the real tyre circumference.
+
+## Power Screen Convention
+
+- Positive direction means required wheel-side output.
+- `Roll [W]` and `Aero [W]` are always positive.
+- `Accel [W]` is positive while accelerating and negative while decelerating.
+- `Grade [W]` is positive uphill and negative downhill.
+- `Wheel Demand [W]` is `max(Roll + Aero + Accel + Grade, 0)`.
+- `Engine Supply [W]` is `Wheel Demand / drivetrain efficiency` while the engine is ON.
+- `Engine Supply [W]` is `0` while the engine is OFF.
+- `Drivetrain Loss [W]` is `Engine Supply - Wheel Demand` while the engine is ON.
+- `Drivetrain Loss Energy [kJ]` is the time integral of drivetrain loss.
 - The standard BSFC calculation uses `engine_rpm_source = telemetry_clamped`.
 - `calculated` remains available for comparison and validation.
 
