@@ -991,7 +991,7 @@ def _main_update(dt):
 
     state.first_update = False
 
-    if _elapsed_time_s - _last_bsfc_diag_log_s >= 1.0:
+    if _cfg_bool(state.strategy.get("debug_mode", 0), False) and _elapsed_time_s - _last_bsfc_diag_log_s >= 1.0:
         _last_bsfc_diag_log_s = _elapsed_time_s
         _log(
             "BSFC diag t={0:.1f} engine_on={1} raw_rpm={2} model_rpm={3:.0f} gear={4} load={5:.3f} trace={6} valid={7} obs_load={8} bsfc_load={9:.3f}".format(
@@ -1006,10 +1006,9 @@ def _main_update(dt):
                 state.current_load_display_ratio,
                 bsfc_load,
             ),
-            force=True,
         )
 
-    if _elapsed_time_s - _last_bsfc_trace_log_s >= 2.0:
+    if _cfg_bool(state.strategy.get("debug_mode", 0), False) and _elapsed_time_s - _last_bsfc_trace_log_s >= 2.0:
         _last_bsfc_trace_log_s = _elapsed_time_s
         trace_rpm = state.bsfc_trace_rpm.to_list()
         trace_load = state.bsfc_trace_load.to_list()
@@ -1032,7 +1031,6 @@ def _main_update(dt):
                     float(state.model_engine_rpm),
                     float(bsfc_load),
                 ),
-                force=True,
             )
 
     if _cfg_bool(state.strategy.get("debug_mode", 0), False) and _elapsed_time_s - _last_fuel_audit_log_s >= 1.0:
