@@ -256,15 +256,22 @@ def _make_size_handler(key, direction):
     def _handler(*args):
         if _state_ref is None:
             return
-        _pending_resize[key] = direction
+        due_at = float(getattr(_state_ref, "session_elapsed_time", 0.0)) + 0.25
+        _pending_resize[key] = (direction, due_at)
     return _handler
 
 
 def _apply_pending_resizes(state):
     if not _pending_resize:
         return
-    pending = dict(_pending_resize)
-    _pending_resize.clear()
+    now = float(getattr(state, "session_elapsed_time", 0.0))
+    pending = {}
+    for key, payload in list(_pending_resize.items()):
+        direction, due_at = payload
+        if now < float(due_at):
+            continue
+        pending[key] = direction
+        _pending_resize.pop(key, None)
     for key, direction in pending.items():
         try:
             _resize_window(state, key, direction)
