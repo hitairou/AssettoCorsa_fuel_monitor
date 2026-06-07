@@ -18,7 +18,7 @@ WINDOW_SPECS = {
     "power": {
         "app_name": "ecoran_power_window",
         "title": "Ecoran Power",
-        "size": (720, 460),
+        "size": (560, 520),
         "position": (390, 80),
         "render": "power",
     },

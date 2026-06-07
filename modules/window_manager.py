@@ -131,6 +131,8 @@ def _configure_window(app_id, key, spec, state):
 
     if key == "power":
         min_w, min_h = panel_power.WINDOW_SIZE
+        layout_geo = panel_power.layout((max(int(size[0]), int(min_w)), max(int(size[1]), int(min_h))))
+        min_h = max(int(min_h), int(layout_geo.get("required_h", min_h)))
         size = (max(int(size[0]), int(min_w)), max(int(size[1]), int(min_h)))
         state.ui_window_sizes[key] = size
 
