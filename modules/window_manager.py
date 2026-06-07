@@ -327,7 +327,7 @@ def _layout_size_buttons(key, state):
     btn_h = _SIZE_BUTTON_STYLE["h"]
     gap = _SIZE_BUTTON_STYLE["gap"]
     base_x = max(width - (btn_w * 2) - gap - 4, 0)
-    y = 30
+    y = 42
     move(up, base_x, y, btn_w, btn_h)
     move(dn, base_x + btn_w + gap, y, btn_w, btn_h)
 
