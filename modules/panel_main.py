@@ -1,5 +1,5 @@
 # modules/panel_main.py
-# Main HUD-style window with three key values and four corner buttons.
+# Main HUD-style window with five key values and four corner buttons.
 
 try:
     import ac
