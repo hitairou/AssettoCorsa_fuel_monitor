@@ -250,9 +250,12 @@ def _add_size_buttons(app_id, key, labels):
 
 def _make_size_handler(key, direction):
     def _handler(*args):
-        if _state_ref is None:
-            return
-        _resize_window(_state_ref, key, direction)
+        try:
+            if _state_ref is None:
+                return
+            _resize_window(_state_ref, key, direction)
+        except Exception:
+            _log_exception("size button clicked: {0} {1}".format(key, direction))
     return _handler
 
 
@@ -304,7 +307,7 @@ def _layout_size_buttons(key, state):
     btn_h = _SIZE_BUTTON_STYLE["h"]
     gap = _SIZE_BUTTON_STYLE["gap"]
     base_x = max(width - (btn_w * 2) - gap - 4, 0)
-    y = 2
+    y = 30
     move(up, base_x, y, btn_w, btn_h)
     move(dn, base_x + btn_w + gap, y, btn_w, btn_h)
 
