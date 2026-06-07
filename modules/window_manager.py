@@ -37,6 +37,7 @@ _last_render_error = {
     "power": None,
     "bsfc": None,
 }
+_pending_resize = {}
 
 _SIZE_BUTTON_STYLE = {
     "w": 18,
@@ -48,9 +49,11 @@ _SIZE_BUTTON_STYLE = {
 
 def create_windows(state):
     global _state_ref, _window_by_app_id
+    global _pending_resize
 
     _state_ref = state
     _window_by_app_id = {}
+    _pending_resize = {}
 
     ensure_defaults(state)
     load_saved_state(state)
@@ -104,6 +107,7 @@ def update_windows(state):
     if state.ui_visibility_dirty:
         _refresh_visibility(state)
 
+    _apply_pending_resizes(state)
     _sync_runtime_geometry(state)
     _layout_all_size_buttons(state)
 
@@ -250,13 +254,22 @@ def _add_size_buttons(app_id, key, labels):
 
 def _make_size_handler(key, direction):
     def _handler(*args):
-        try:
-            if _state_ref is None:
-                return
-            _resize_window(_state_ref, key, direction)
-        except Exception:
-            _log_exception("size button clicked: {0} {1}".format(key, direction))
+        if _state_ref is None:
+            return
+        _pending_resize[key] = direction
     return _handler
+
+
+def _apply_pending_resizes(state):
+    if not _pending_resize:
+        return
+    pending = dict(_pending_resize)
+    _pending_resize.clear()
+    for key, direction in pending.items():
+        try:
+            _resize_window(state, key, direction)
+        except Exception:
+            _log_exception("size button applied: {0} {1}".format(key, direction))
 
 
 def _resize_window(state, key, direction):
