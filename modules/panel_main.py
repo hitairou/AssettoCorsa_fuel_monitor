@@ -24,12 +24,14 @@ from modules.panel_common import (
 from modules.ui_presets import PRESET_ABBREV
 
 
-WINDOW_SIZE = (560, 108)
+WINDOW_SIZE = (640, 108)
 TITLE_SAFE_TOP = 28
 OUTER_PAD_X = 10
 OUTER_PAD_Y = 8
 BUTTON_W = 48
 BUTTON_H = 20
+BUTTON_COL_W = 112
+BUTTON_ROW_GAP = 6
 
 
 def layout(window_size):
@@ -40,9 +42,9 @@ def layout(window_size):
     body_h = max(height - body_y - OUTER_PAD_Y, 48)
 
     inner_pad = 18
-    content_x = body_x + inner_pad
+    content_x = body_x + BUTTON_COL_W + inner_pad
     content_y = body_y + 12
-    content_w = max(body_w - inner_pad * 2, 200)
+    content_w = max(body_w - BUTTON_COL_W - inner_pad * 2, 200)
     content_h = max(body_h - 24, 24)
     block_w = content_w / 3.0
 
@@ -50,9 +52,9 @@ def layout(window_size):
         "body_rect": (body_x, body_y, body_w, body_h),
         "buttons": {
             "power": (body_x + 6, body_y + 6),
-            "lap": (body_x + body_w - BUTTON_W - 6, body_y + 6),
-            "bsfc": (body_x + 6, body_y + body_h - BUTTON_H - 6),
-            "debug": (body_x + body_w - BUTTON_W - 6, body_y + body_h - BUTTON_H - 6),
+            "lap": (body_x + BUTTON_W + 12, body_y + 6),
+            "bsfc": (body_x + 6, body_y + BUTTON_H + BUTTON_ROW_GAP + 6),
+            "debug": (body_x + BUTTON_W + 12, body_y + BUTTON_H + BUTTON_ROW_GAP + 6),
         },
         "value_rects": {
             "avg_econ": (content_x, content_y, block_w, content_h),
@@ -116,6 +118,7 @@ def render(state, window_size):
     _draw_rect(x, y, w, h, (0.07, 0.09, 0.11, 0.78))
     _draw_rect(x + 1, y + 1, w - 2, 4, (0.22, 0.25, 0.29, 0.25))
     _draw_outline(x, y, w, h, (0.72, 0.76, 0.82, 0.18))
+    _draw_line(x + BUTTON_COL_W, y + 4, x + BUTTON_COL_W, y + h - 4, (0.78, 0.82, 0.88, 0.14))
 
     for idx, key in enumerate(("avg_econ", "pace_delta", "engine")):
         rx, ry, rw, rh = geo["value_rects"][key]

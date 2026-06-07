@@ -11,7 +11,7 @@ WINDOW_SPECS = {
     "main": {
         "app_name": "ecoran_fuel_monitor",
         "title": "Ecoran Main",
-        "size": (340, 230),
+        "size": (640, 108),
         "position": (40, 80),
         "render": None,
     },
@@ -105,8 +105,8 @@ def load_saved_state(state):
         main_h = int(main_size[1])
     except Exception:
         main_w, main_h = WINDOW_SPECS["main"]["size"]
-    if main_h != 108:
-        state.ui_window_sizes["main"] = (main_w, 108)
+    if main_w != 640 or main_h != 108:
+        state.ui_window_sizes["main"] = (640, 108)
 
     restore_state = True
     try:
