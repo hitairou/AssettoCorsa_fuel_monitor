@@ -17,7 +17,7 @@ except ImportError:
 
 from modules import bsfc_renderer, gauge_renderer, graph_renderer
 from modules import panel_bsfc, panel_debug, panel_lap, panel_main, panel_power
-from modules.panel_common import add_button, move, safe_call, set_text
+from modules.panel_common import safe_call
 from modules.ui_presets import cycle_preset, set_window_visible, toggle_window, visibility_map
 from modules.ui_state import WINDOW_ORDER, WINDOW_SPECS, ensure_defaults, load_saved_state, save_state
 
@@ -37,23 +37,13 @@ _last_render_error = {
     "power": None,
     "bsfc": None,
 }
-_pending_resize = {}
-
-_SIZE_BUTTON_STYLE = {
-    "w": 18,
-    "h": 16,
-    "gap": 2,
-    "font": 10,
-}
 
 
 def create_windows(state):
     global _state_ref, _window_by_app_id
-    global _pending_resize
 
     _state_ref = state
     _window_by_app_id = {}
-    _pending_resize = {}
 
     ensure_defaults(state)
     load_saved_state(state)
@@ -83,7 +73,6 @@ def create_windows(state):
             "labels": labels,
             "panel": PANELS[key],
         }
-        _add_size_buttons(app_id, key, labels)
         state.labels[key] = labels
         _window_by_app_id[app_id] = key
 
@@ -107,9 +96,7 @@ def update_windows(state):
     if state.ui_visibility_dirty:
         _refresh_visibility(state)
 
-    _apply_pending_resizes(state)
     _sync_runtime_geometry(state)
-    _layout_all_size_buttons(state)
 
     for key in WINDOW_ORDER:
         entry = state.ui_windows.get(key)
@@ -241,100 +228,6 @@ def _sync_runtime_geometry(state):
             elif key == "main":
                 next_size = (max(int(next_size[0]), 1), max(int(next_size[1]), panel_main.WINDOW_SIZE[1]))
             state.ui_window_sizes[key] = next_size
-
-
-def _add_size_buttons(app_id, key, labels):
-    up = add_button(app_id, "+", 0, 0, _SIZE_BUTTON_STYLE["w"], _SIZE_BUTTON_STYLE["h"], _SIZE_BUTTON_STYLE["font"], callback=_make_size_handler(key, 1))
-    dn = add_button(app_id, "-", 0, 0, _SIZE_BUTTON_STYLE["w"], _SIZE_BUTTON_STYLE["h"], _SIZE_BUTTON_STYLE["font"], callback=_make_size_handler(key, -1))
-    labels["size_up_button"] = up
-    labels["size_down_button"] = dn
-    set_text(up, "+")
-    set_text(dn, "-")
-
-
-def _make_size_handler(key, direction):
-    def _handler(*args):
-        if _state_ref is None:
-            return
-        due_at = float(getattr(_state_ref, "session_elapsed_time", 0.0)) + 0.25
-        _pending_resize[key] = (direction, due_at)
-    return _handler
-
-
-def _apply_pending_resizes(state):
-    if not _pending_resize:
-        return
-    now = float(getattr(state, "session_elapsed_time", 0.0))
-    pending = {}
-    for key, payload in list(_pending_resize.items()):
-        direction, due_at = payload
-        if now < float(due_at):
-            continue
-        pending[key] = direction
-        _pending_resize.pop(key, None)
-    for key, direction in pending.items():
-        try:
-            _resize_window(state, key, direction)
-        except Exception:
-            _log_exception("size button applied: {0} {1}".format(key, direction))
-
-
-def _resize_window(state, key, direction):
-    entry = state.ui_windows.get(key)
-    if entry is None:
-        return
-    current_size = state.ui_window_sizes.get(key, WINDOW_SPECS[key]["size"])
-    try:
-        current_w = max(int(current_size[0]), 1)
-        current_h = max(int(current_size[1]), 1)
-    except Exception:
-        current_w, current_h = WINDOW_SPECS[key]["size"]
-
-    step_w = max(int(current_w * 0.15), 24)
-    step_h = max(int(current_h * 0.15), 18)
-    next_w = max(current_w + (step_w * direction), 120)
-    next_h = max(current_h + (step_h * direction), 80)
-
-    if key == "power":
-        required_h = int(panel_power.layout((next_w, next_h)).get("required_h", panel_power.WINDOW_SIZE[1]))
-        next_h = max(next_h, required_h)
-    elif key == "main":
-        next_h = max(next_h, panel_main.WINDOW_SIZE[1])
-
-    state.ui_window_sizes[key] = (next_w, next_h)
-    safe_call(ac.setSize, entry["id"], next_w, next_h)
-    _layout_size_buttons(key, state)
-    save_state(state)
-
-
-def _layout_size_buttons(key, state):
-    entry = state.ui_windows.get(key)
-    if entry is None:
-        return
-    labels = entry.get("labels", {})
-    up = labels.get("size_up_button")
-    dn = labels.get("size_down_button")
-    if up is None or dn is None:
-        return
-
-    size = state.ui_window_sizes.get(key, WINDOW_SPECS[key]["size"])
-    try:
-        width = max(int(size[0]), 1)
-    except Exception:
-        width = WINDOW_SPECS[key]["size"][0]
-
-    btn_w = _SIZE_BUTTON_STYLE["w"]
-    btn_h = _SIZE_BUTTON_STYLE["h"]
-    gap = _SIZE_BUTTON_STYLE["gap"]
-    base_x = max(width - (btn_w * 2) - gap - 4, 0)
-    y = 42
-    move(up, base_x, y, btn_w, btn_h)
-    move(dn, base_x + btn_w + gap, y, btn_w, btn_h)
-
-
-def _layout_all_size_buttons(state):
-    for key in WINDOW_ORDER:
-        _layout_size_buttons(key, state)
 
 
 def _render_power(*args):
