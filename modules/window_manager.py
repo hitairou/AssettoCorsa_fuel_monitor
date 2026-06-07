@@ -134,7 +134,7 @@ def _configure_window(app_id, key, spec, state):
         size = (max(int(size[0]), 1), max(int(size[1]), int(min_h)))
         state.ui_window_sizes[key] = size
     elif key == "main":
-        size = (max(int(size[0]), 1), max(int(size[1]), panel_main.WINDOW_SIZE[1]))
+        size = (max(int(size[0]), panel_main.WINDOW_SIZE[0]), max(int(size[1]), panel_main.WINDOW_SIZE[1]))
         state.ui_window_sizes[key] = size
 
     safe_call(ac.setSize, app_id, size[0], size[1])
@@ -226,7 +226,7 @@ def _sync_runtime_geometry(state):
                 min_h = int(panel_power.layout((max(int(next_size[0]), 1), max(int(next_size[1]), 1))).get("required_h", panel_power.WINDOW_SIZE[1]))
                 next_size = (max(int(next_size[0]), 1), max(int(next_size[1]), int(min_h)))
             elif key == "main":
-                next_size = (max(int(next_size[0]), 1), max(int(next_size[1]), panel_main.WINDOW_SIZE[1]))
+                next_size = (max(int(next_size[0]), panel_main.WINDOW_SIZE[0]), max(int(next_size[1]), panel_main.WINDOW_SIZE[1]))
             state.ui_window_sizes[key] = next_size
 
 
