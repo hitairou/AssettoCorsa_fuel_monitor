@@ -64,10 +64,12 @@ class AppState(object):
         self.demand_engine_power_w = 0.0
         self.demand_required_torque_nm = 0.0
         self.demand_load_ratio = 0.0
+        self.demand_bsfc_raw_g_per_kwh = 400.0
         self.demand_bsfc_g_per_kwh = 400.0
         self.demand_fuel_mass_flow_g_s = 0.0
         self.demand_fuel_flow_ml_s = 0.0
 
+        self.current_bsfc_raw_display_g_per_kwh = None
         self.current_bsfc_display_g_per_kwh = None
         self.current_load_display_ratio = None
         self.current_fuel_flow_display_ml_s = 0.0
@@ -75,6 +77,7 @@ class AppState(object):
         self.bsfc_map_min_value = None
         self.bsfc_map_min_rpm = None
         self.bsfc_map_min_load = None
+        self.low_load_correction_enabled = False
 
         self.demand_roll_power_w = 0.0
         self.demand_aero_power_w = 0.0

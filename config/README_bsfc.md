@@ -1,6 +1,8 @@
 # BSFC Map Notes
 
 The current BSFC map is not measured BSFC data for the actual engine.
+The map already includes explicit low-load degradation, so the runtime
+`low_load_correction_enabled` setting is `0` by default to avoid double penalty.
 
 The high-load and peak-power region is anchored from a thermal-efficiency estimate:
 
@@ -11,3 +13,6 @@ The high-load and peak-power region is anchored from a thermal-efficiency estima
 
 The low-load, low-rpm, and over-rev high-rpm regions are intentionally worsened
 according to the general BSFC-map shape rather than direct measurement.
+
+If you want to compare against the older extra low-load penalty behavior, set
+`low_load_correction_enabled=1` and record that setting with the run data.

@@ -132,6 +132,21 @@ def _nice_power_scale(raw_scale, minimum_scale, maximum_scale):
     return float(maximum_scale)
 
 
+def _apply_low_load_bsfc_correction(strategy, raw_bsfc, load):
+    enabled = _cfg_bool(strategy.get("low_load_correction_enabled", 0), False)
+    threshold = float(strategy.get("low_load_threshold", 0.2))
+    max_penalty = float(strategy.get("low_load_max_penalty", 1.5))
+    corrected_bsfc = raw_bsfc
+    if enabled:
+        corrected_bsfc = low_load_correction(
+            raw_bsfc,
+            load,
+            threshold=threshold,
+            max_penalty=max_penalty,
+        )
+    return enabled, corrected_bsfc
+
+
 def _power_graph_scale_from_state(state, strategy):
     auto_scale = _cfg_bool(strategy.get("power_graph_auto_scale", 1), True)
     if not auto_scale:
@@ -582,6 +597,9 @@ def acMain(ac_version):
         _debug_mode = _cfg_bool(strategy.get("debug_mode", 0), False)
         state.session_id = uuid.uuid4().hex[:6].upper()
         state.build_id = _compute_build_id()
+        state.low_load_correction_enabled = _cfg_bool(
+            strategy.get("low_load_correction_enabled", 0), False
+        )
 
         state.measurement_start_mode = str(
             strategy.get("measurement_start_mode", "first_cross_sf")
@@ -815,10 +833,14 @@ def _main_update(dt):
     state.demand_required_torque_nm = T_req
     state.demand_load_ratio = demand_load
 
-    demand_bsfc = low_load_correction(
-        _bsfc_interp.query(state.model_engine_rpm, demand_load),
+    raw_demand_bsfc = _bsfc_interp.query(state.model_engine_rpm, demand_load)
+    low_load_enabled, demand_bsfc = _apply_low_load_bsfc_correction(
+        strategy,
+        raw_demand_bsfc,
         demand_load,
     )
+    state.low_load_correction_enabled = low_load_enabled
+    state.demand_bsfc_raw_g_per_kwh = raw_demand_bsfc
     state.demand_bsfc_g_per_kwh = demand_bsfc
 
     fuel_density = float(vehicle.get("fuel_density_g_per_ml", 0.778))
@@ -847,8 +869,10 @@ def _main_update(dt):
         engaged_raw_gear,
         lambda rpm: _tmax_lookup.query(rpm),
     )
-    bsfc_bsfc = low_load_correction(
-        _bsfc_interp.query(state.model_engine_rpm, bsfc_load),
+    raw_bsfc_bsfc = _bsfc_interp.query(state.model_engine_rpm, bsfc_load)
+    _, bsfc_bsfc = _apply_low_load_bsfc_correction(
+        strategy,
+        raw_bsfc_bsfc,
         bsfc_load,
     )
     bsfc_mf_dot, bsfc_vf_dot = compute_fuel_flow(
@@ -856,14 +880,10 @@ def _main_update(dt):
     )
 
     engine_point_valid = state.engine_on and state.model_engine_rpm >= 100
-    if engine_point_valid:
-        state.current_bsfc_display_g_per_kwh = bsfc_bsfc
-        state.current_load_display_ratio = bsfc_load
-        state.current_fuel_flow_display_ml_s = bsfc_vf_dot
-    else:
-        state.current_bsfc_display_g_per_kwh = None
-        state.current_load_display_ratio = bsfc_load
-        state.current_fuel_flow_display_ml_s = 0.0
+    state.current_bsfc_raw_display_g_per_kwh = raw_bsfc_bsfc
+    state.current_bsfc_display_g_per_kwh = bsfc_bsfc if engine_point_valid else None
+    state.current_load_display_ratio = bsfc_load
+    state.current_fuel_flow_display_ml_s = bsfc_vf_dot if engine_point_valid else 0.0
 
     if engine_point_valid:
         state.bsfc_trace_rpm.append(float(state.model_engine_rpm))
@@ -952,6 +972,10 @@ def _main_update(dt):
         "calc_raw_delta": state.calculated_engine_rpm - float(state.observed_rpm),
         "rear_tire_circumference_m": float(vehicle.get("rear_tire_circumference_m", 0.0)),
         "load": state.demand_load_ratio,
+        "demand_load": state.demand_load_ratio,
+        "raw_bsfc": state.demand_bsfc_raw_g_per_kwh,
+        "corrected_bsfc": state.demand_bsfc_g_per_kwh,
+        "low_load_correction_enabled": state.low_load_correction_enabled,
         "bsfc": state.demand_bsfc_g_per_kwh,
         "demand_engine_power_w": state.demand_engine_power_w,
         "mf_dot_g_s": state.demand_fuel_mass_flow_g_s,
@@ -1022,7 +1046,8 @@ def _main_update(dt):
             "fuel audit t={t:.1f} dt={dt:.3f} rpm_source={rpm_source} engine_on={engine_on} raw_rpm={observed_rpm} "
             "model_rpm={model_rpm:.0f} calculated_rpm={calculated_rpm:.0f} telemetry_clamped_rpm={telemetry_clamped_rpm:.0f} "
             "model_raw_delta={model_raw_delta:.0f} calc_raw_delta={calc_raw_delta:.0f} rear_tire_circ={rear_tire_circumference_m:.3f} "
-            "load={load:.3f} bsfc={bsfc:.1f} P_engine={demand_engine_power_w:.1f} mf_dot={mf_dot_g_s:.5f} "
+            "load={load:.3f} demand_load={demand_load:.3f} raw_bsfc={raw_bsfc:.1f} corrected_bsfc={corrected_bsfc:.1f} "
+            "low_load_correction_enabled={low_load_correction_enabled} P_engine={demand_engine_power_w:.1f} mf_dot={mf_dot_g_s:.5f} "
             "vf_dot={vf_dot_ml_s:.5f} cumul={cumul_fuel_ml:.4f} meas_fuel={measurement_fuel_used_ml:.4f} "
             "meas_dist={measurement_dist_m:.2f} avg_kmpl={avg_fuel_econ_km_per_l} measurement_active={measurement_active} "
             "laps_completed={laps_completed} lap_rows={lap_rows_len}".format(**audit),
