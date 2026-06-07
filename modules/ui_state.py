@@ -18,7 +18,7 @@ WINDOW_SPECS = {
     "power": {
         "app_name": "ecoran_power_window",
         "title": "Ecoran Power",
-        "size": (520, 520),
+        "size": (440, 520),
         "position": (390, 80),
         "render": "power",
     },
@@ -95,9 +95,9 @@ def load_saved_state(state):
         power_h = int(power_size[1])
     except Exception:
         power_w, power_h = WINDOW_SPECS["power"]["size"]
-    if power_w != 520 or power_h < 520:
+    if power_w != 440 or power_h < 520:
         # Power window width is clamped to avoid saved oversized layouts.
-        state.ui_window_sizes["power"] = (520, max(power_h, 520))
+        state.ui_window_sizes["power"] = (440, max(power_h, 520))
 
     main_size = state.ui_window_sizes.get("main", WINDOW_SPECS["main"]["size"])
     try:

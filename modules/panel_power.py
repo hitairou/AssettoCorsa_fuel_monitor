@@ -6,7 +6,7 @@ from modules import graph_renderer
 from modules.panel_common import add_label, move, set_color, set_text
 
 
-WINDOW_SIZE = (520, 520)
+WINDOW_SIZE = (440, 520)
 PADDING = 8
 GRAPH_H = 112
 BAR_LABEL_W = 126
