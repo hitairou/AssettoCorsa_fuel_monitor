@@ -13,14 +13,14 @@ ROW_COUNT = 8
 TITLE_SAFE_TOP = 28
 COLS = [
     ("lap", "Lap", 32, "center"),
-    ("econ", "Econ", 56, "right"),
-    ("fuel", "Fuel", 52, "right"),
-    ("speed", "Spd", 54, "right"),
-    ("eng", "Eng kJ", 58, "right"),
-    ("roll", "Roll", 58, "right"),
-    ("aero", "Aero", 58, "right"),
-    ("accel", "Accel", 58, "right"),
-    ("grade", "Grade", 58, "right"),
+    ("econ", "Econ [km/L]", 56, "right"),
+    ("fuel", "Fuel [mL]", 52, "right"),
+    ("speed", "Spd [km/h]", 54, "right"),
+    ("eng", "Eng [kJ]", 58, "right"),
+    ("roll", "Roll [kJ]", 58, "right"),
+    ("aero", "Aero [kJ]", 58, "right"),
+    ("accel", "Accel [kJ]", 58, "right"),
+    ("grade", "Grade [kJ]", 58, "right"),
     ("restart", "Rst", 42, "right"),
     ("on_ratio", "ON%", 52, "right"),
 ]
