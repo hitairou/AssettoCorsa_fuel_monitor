@@ -24,7 +24,7 @@ from modules.panel_common import (
 from modules.ui_presets import PRESET_ABBREV
 
 
-WINDOW_SIZE = (560, 118)
+WINDOW_SIZE = (560, 108)
 TITLE_SAFE_TOP = 28
 OUTER_PAD_X = 10
 OUTER_PAD_Y = 8
