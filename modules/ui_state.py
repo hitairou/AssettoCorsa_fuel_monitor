@@ -91,22 +91,19 @@ def load_saved_state(state):
 
     power_size = state.ui_window_sizes.get("power", WINDOW_SPECS["power"]["size"])
     try:
-        power_w = int(power_size[0])
         power_h = int(power_size[1])
     except Exception:
-        power_w, power_h = WINDOW_SPECS["power"]["size"]
-    if power_w != 440 or power_h < 520:
-        # Power window width is clamped to avoid saved oversized layouts.
-        state.ui_window_sizes["power"] = (440, max(power_h, 520))
+        power_h = WINDOW_SPECS["power"]["size"][1]
+    if power_h < 520:
+        state.ui_window_sizes["power"] = (int(power_size[0]), 520)
 
     main_size = state.ui_window_sizes.get("main", WINDOW_SPECS["main"]["size"])
     try:
-        main_w = int(main_size[0])
         main_h = int(main_size[1])
     except Exception:
-        main_w, main_h = WINDOW_SPECS["main"]["size"]
-    if main_w != 640 or main_h != 108:
-        state.ui_window_sizes["main"] = (640, 108)
+        main_h = WINDOW_SPECS["main"]["size"][1]
+    if main_h < 108:
+        state.ui_window_sizes["main"] = (int(main_size[0]), 108)
 
     restore_state = True
     try:

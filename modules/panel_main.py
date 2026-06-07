@@ -137,7 +137,7 @@ def _apply_layout(labels, size):
     move(labels["lap_button"], geo["buttons"]["lap"][0], geo["buttons"]["lap"][1], BUTTON_W, BUTTON_H)
     move(labels["bsfc_button"], geo["buttons"]["bsfc"][0], geo["buttons"]["bsfc"][1], BUTTON_W + 10, BUTTON_H)
     move(labels["debug_button"], geo["buttons"]["debug"][0], geo["buttons"]["debug"][1], BUTTON_W, BUTTON_H)
-    move(labels["run_id"], int(size[0] - 100), 8, 92, 14)
+    move(labels["run_id"], int(size[0] - 180), 8, 170, 14)
 
     for key in ("avg_econ", "pace_delta", "engine"):
         rect = geo["value_rects"][key]
