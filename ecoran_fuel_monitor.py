@@ -742,7 +742,6 @@ def acUpdate(delta_t):
                     engine_meta.get("error") or accel_meta.get("error") or "",
                     getattr(state, "last_render_error", ""),
                 ),
-                force=True,
             )
         state.prev_dist_traveled = float(state.raw_distance_traveled)
         state.prev_observed_lap_count = int(state.observed_lap_count)
