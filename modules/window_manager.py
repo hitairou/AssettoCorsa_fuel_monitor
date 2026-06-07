@@ -131,9 +131,9 @@ def _configure_window(app_id, key, spec, state):
 
     if key == "power":
         min_w, min_h = panel_power.WINDOW_SIZE
-        layout_geo = panel_power.layout((max(int(size[0]), int(min_w)), max(int(size[1]), int(min_h))))
+        layout_geo = panel_power.layout((int(min_w), max(int(size[1]), int(min_h))))
         min_h = max(int(min_h), int(layout_geo.get("required_h", min_h)))
-        size = (max(int(size[0]), int(min_w)), max(int(size[1]), int(min_h)))
+        size = (int(min_w), max(int(size[1]), int(min_h)))
         state.ui_window_sizes[key] = size
 
     safe_call(ac.setSize, app_id, size[0], size[1])
@@ -220,7 +220,11 @@ def _sync_runtime_geometry(state):
 
         size = safe_call(ac.getSize, entry["id"])
         if isinstance(size, (list, tuple)) and len(size) >= 2:
-            state.ui_window_sizes[key] = (max(int(size[0]), 1), max(int(size[1]), 1))
+            next_size = (max(int(size[0]), 1), max(int(size[1]), 1))
+            if key == "power":
+                min_w, min_h = panel_power.WINDOW_SIZE
+                next_size = (max(min_w, min(next_size[0], 580)), max(min_h, next_size[1]))
+            state.ui_window_sizes[key] = next_size
 
 
 def _render_power(*args):

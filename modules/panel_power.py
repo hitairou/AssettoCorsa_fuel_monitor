@@ -10,7 +10,7 @@ WINDOW_SIZE = (560, 520)
 PADDING = 8
 GRAPH_H = 112
 BAR_LABEL_W = 126
-BAR_VALUE_W = 84
+BAR_VALUE_W = 56
 BAR_GAP = 8
 TITLE_SAFE_TOP = 28
 AXIS_W = 30
@@ -709,7 +709,7 @@ def _row_color_for_key(row_key):
 
 
 def _estimate_token_width(text):
-    return max(8, int(len(text) * 5.0) + 2)
+    return max(6, int(len(text) * 4.6) + 1)
 
 
 def _is_positive_metric(value):
