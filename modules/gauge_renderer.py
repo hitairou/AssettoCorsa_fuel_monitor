@@ -123,8 +123,7 @@ def _draw_bar(left_x, y, height, width_px, r, g, b, mode):
         x0 = left_x
         x1 = left_x + width_px
     else:
-        center_x = left_x + (width_px * 0.0)  # placeholder for symmetry below
-        center_x = left_x + 0.0
+        center_x = left_x
         if width_px >= 0.0:
             x0 = center_x
             x1 = center_x + width_px

@@ -6,7 +6,7 @@ from modules import graph_renderer
 from modules.panel_common import add_label, move, set_color, set_text
 
 
-WINDOW_SIZE = (930, 620)
+WINDOW_SIZE = (720, 500)
 PADDING = 8
 GRAPH_H = 112
 BAR_LABEL_W = 126
@@ -24,6 +24,9 @@ FORMULA_H = 10
 ROW_H = 12
 ROW_BLOCK_H = 25
 GROUP_GAP = 10
+BAR_H = 10
+FORMULA_GAP = 2
+MAX_FORMULA_TOKENS = 24
 
 GROUP_HEADERS = [
     ("road", "Road Load Components"),
@@ -32,20 +35,20 @@ GROUP_HEADERS = [
 ]
 
 ROAD_LOAD_ROWS = [
-    ("roll", "Roll [W]", (0.3, 1.0, 0.3, 1.0), "positive"),
-    ("aero", "Aero [W]", (0.3, 0.8, 1.0, 1.0), "positive"),
-    ("accel", "Accel [W]", (1.0, 0.6, 0.2, 1.0), "signed"),
-    ("grade", "Grade [W]", (1.0, 0.4, 0.9, 1.0), "signed"),
+    ("roll", "Roll [W]", (0.3, 1.0, 0.3, 1.0), "positive", 1),
+    ("aero", "Aero [W]", (0.3, 0.8, 1.0, 1.0), "positive", 1),
+    ("accel", "Accel [W]", (1.0, 0.6, 0.2, 1.0), "signed", 1),
+    ("grade", "Grade [W]", (1.0, 0.4, 0.9, 1.0), "signed", 1),
 ]
 
 SUMMARY_ROWS = [
-    ("wheel", "Wheel Demand [W]", (1.0, 1.0, 1.0, 1.0), "positive"),
+    ("wheel", "Wheel Demand [W]", (1.0, 1.0, 1.0, 1.0), "positive", 2),
 ]
 
 ENGINE_ROWS = [
-    ("engine_supply", "Engine Supply [W]", (0.85, 0.85, 0.92, 1.0), "positive"),
-    ("drivetrain_loss", "Drivetrain Loss [W]", (1.0, 0.75, 0.25, 1.0), "positive"),
-    ("drivetrain_loss_energy", "Drivetrain Loss Energy [kJ]", (0.35, 0.75, 1.0, 1.0), "positive"),
+    ("engine_supply", "Engine Supply [W]", (0.85, 0.85, 0.92, 1.0), "positive", 2),
+    ("drivetrain_loss", "Drivetrain Loss [W]", (1.0, 0.75, 0.25, 1.0), "positive", 2),
+    ("drivetrain_loss_energy", "Drivetrain Loss Energy [kJ]", (0.35, 0.75, 1.0, 1.0), "positive", 1),
 ]
 
 POWER_ROWS = ROAD_LOAD_ROWS + SUMMARY_ROWS + ENGINE_ROWS
@@ -92,25 +95,29 @@ def layout(window_size):
                 "y": current_y - 12,
             }
         )
-        for key, title, color, mode in group_rows:
-            formula_y = current_y
-            row_y = current_y + FORMULA_H
+        for key, title, color, mode, formula_lines in group_rows:
+            formula_h = FORMULA_H * formula_lines + max(0, formula_lines - 1) * 2
+            bar_y = current_y + formula_h + FORMULA_GAP
+            row_h = max(BAR_H, 10)
             rows.append(
                 {
                     "key": key,
                     "title": title,
                     "color": color,
                     "mode": mode,
-                    "formula_y": formula_y,
-                    "row_y": row_y,
-                    "title_y": row_y,
-                    "value_y": row_y,
-                    "bar_y": row_y + 1,
-                    "bar_h": 11,
+                    "formula_lines": formula_lines,
+                    "formula_y": current_y,
+                    "formula_h": formula_h,
                     "formula_x": bar_graph_x,
+                    "formula_w": bar_graph_w - BAR_VALUE_W - BAR_GAP - 8,
+                    "row_y": bar_y,
+                    "title_y": bar_y,
+                    "value_y": bar_y,
+                    "bar_y": bar_y + 1,
+                    "bar_h": row_h,
                 }
             )
-            current_y += ROW_BLOCK_H
+            current_y += formula_h + FORMULA_GAP + row_h + 4
 
     bar_rows = rows[:-1]
     energy_row = rows[-1]
@@ -121,7 +128,7 @@ def layout(window_size):
         bar_rect_y = current_y
         bar_rect_h = 20
 
-    estore_rect = (bar_graph_x, energy_row["bar_y"] - 2, bar_graph_w, 22)
+    estore_rect = (bar_graph_x, energy_row["bar_y"] - 2, bar_graph_w, energy_row["bar_h"] + 6)
     return {
         "summary": (PADDING, TITLE_SAFE_TOP + 2, width - PADDING * 2, 20),
         "graph_rect": (graph_x, graph_y, graph_w, GRAPH_H),
@@ -195,13 +202,7 @@ def create(window_id):
         labels["val_" + row["key"]] = add_label(
             window_id, "0", geo["bar_value_x"], row["value_y"], BAR_VALUE_W, ROW_H, ROW_FONT, "right"
         )
-        labels["formula_" + row["key"]] = create_formula_tokens(
-            window_id,
-            row["key"],
-            row["formula_x"],
-            row["formula_y"],
-            _formula_tokens_for_row(row["key"], None),
-        )
+        labels["formula_" + row["key"]] = create_formula_tokens(window_id, row["key"], MAX_FORMULA_TOKENS)
 
     return labels
 
@@ -238,8 +239,7 @@ def update(labels, state):
     for row in geo["rows"]:
         row_key = row["key"]
         row_color = row["color"]
-        tokens = _formula_tokens_for_row(row_key, state)
-        update_formula_tokens(labels, row_key, row["formula_x"], row["formula_y"], tokens, row_color)
+        update_formula_tokens(labels, row, state, row_color)
         set_color(labels["lbl_" + row_key], row_color)
         set_color(labels["val_" + row_key], row_color if row_key != "drivetrain_loss" else (1.0, 0.75, 0.25, 1.0))
 
@@ -283,33 +283,111 @@ def update(labels, state):
         set_text(labels["diag_state"], "")
 
 
-def create_formula_tokens(window_id, row_key, x, y, tokens):
+def create_formula_tokens(window_id, row_key, token_count):
     labels = []
-    cursor_x = x
-    for idx, (text, style) in enumerate(tokens):
-        width = _estimate_token_width(text)
-        color = _style_color(style, row_key)
-        label = add_label(window_id, text, cursor_x, y, width, 10, FORMULA_FONT, "left", color)
-        labels.append(label)
-        cursor_x += width
+    for _idx in range(token_count):
+        labels.append(add_label(window_id, "", 0, 0, 12, FORMULA_H, FORMULA_FONT, "left"))
     return labels
 
 
-def update_formula_tokens(labels, row_key, x, y, tokens, row_color):
-    token_labels = labels.get("formula_" + row_key, [])
-    cursor_x = x
+def update_formula_tokens(labels, row, state, row_color):
+    token_labels = labels.get("formula_" + row["key"], [])
+    formula_x = row["formula_x"]
+    formula_y = row["formula_y"]
+    formula_w = row["formula_w"]
+    line_h = FORMULA_H
+    max_lines = row["formula_lines"]
+    tokens = _choose_formula_tokens(row["key"], state, formula_w, max_lines)
+    layout = _layout_formula_tokens(tokens, formula_x, formula_y, formula_w, line_h, max_lines)
+    for idx, label in enumerate(token_labels):
+        if idx < len(layout):
+            item = layout[idx]
+            move(label, item["x"], item["y"], item["w"], FORMULA_H)
+            set_text(label, item["text"])
+            set_color(label, _style_color(item["style"], row["key"], row_color))
+        else:
+            move(label, formula_x, formula_y, 12, FORMULA_H)
+            set_text(label, "")
+            set_color(label, (1.0, 1.0, 1.0, 0.0))
+
+
+def _layout_formula_tokens(tokens, formula_x, formula_y, formula_w, line_h, max_lines):
+    laid_out = []
+    line = 0
+    cursor_x = formula_x
+    line_start_x = formula_x
+    line_width = 0
     for idx, (text, style) in enumerate(tokens):
-        if idx >= len(token_labels):
+        token_w = _estimate_token_width(text)
+        if line_width > 0 and cursor_x + token_w > formula_x + formula_w:
+            line += 1
+            if line >= max_lines:
+                break
+            cursor_x = line_start_x
+            line_width = 0
+        laid_out.append(
+            {
+                "text": text,
+                "style": style,
+                "x": cursor_x,
+                "y": formula_y + line * (line_h + 1),
+                "w": token_w,
+            }
+        )
+        cursor_x += token_w
+        line_width += token_w
+    return _trim_formula_layout(laid_out, formula_x, formula_y, formula_w, line_h, max_lines)
+
+
+def _trim_formula_layout(laid_out, formula_x, formula_y, formula_w, line_h, max_lines):
+    if not laid_out:
+        return laid_out
+    last_y = laid_out[-1]["y"]
+    if last_y <= formula_y + (max_lines - 1) * (line_h + 1):
+        return laid_out
+    if max_lines <= 1:
+        return _truncate_to_result_only(laid_out, formula_x, formula_y, formula_w)
+    return laid_out
+
+
+def _truncate_to_result_only(laid_out, formula_x, formula_y, formula_w):
+    result_token = None
+    for token in reversed(laid_out):
+        if token["style"] == "result":
+            result_token = token
             break
-        width = _estimate_token_width(text)
-        label = token_labels[idx]
-        move(label, cursor_x, y, width, 10)
-        set_text(label, text)
-        set_color(label, _style_color(style, row_key, row_color))
-        cursor_x += width
+    if result_token is None:
+        return laid_out[:1]
+    result_w = min(_estimate_token_width(result_token["text"]), formula_w)
+    return [
+        {
+            "text": result_token["text"],
+            "style": result_token["style"],
+            "x": formula_x,
+            "y": formula_y,
+            "w": result_w,
+        }
+    ]
 
 
-def _formula_tokens_for_row(row_key, state):
+def _choose_formula_tokens(row_key, state, formula_w, max_lines):
+    detailed = _formula_tokens_for_row(row_key, state, compact=False)
+    if _fits_line(detailed, formula_w):
+        return detailed
+    compact = _formula_tokens_for_row(row_key, state, compact=True)
+    if _fits_line(compact, formula_w):
+        return compact
+    if max_lines > 1:
+        if _fits_line(_formula_tokens_for_row(row_key, state, compact="minimal"), formula_w):
+            return _formula_tokens_for_row(row_key, state, compact="minimal")
+    return _formula_tokens_for_row(row_key, state, compact="minimal")
+
+
+def _fits_line(tokens, formula_w):
+    return sum(_estimate_token_width(text) for text, _style in tokens) <= formula_w
+
+
+def _formula_tokens_for_row(row_key, state, compact=False):
     v_ms = getattr(state, "observed_speed_ms", 0.0) if state is not None else 0.0
     accel_ms2 = getattr(state, "accel_ms2", 0.0) if state is not None else 0.0
     theta = getattr(state, "theta_rad", 0.0) if state is not None else 0.0
@@ -330,6 +408,26 @@ def _formula_tokens_for_row(row_key, state):
     area = float(getattr(state, "vehicle", {}).get("frontal_area", 0.3846)) if state is not None else 0.3846
 
     if row_key == "roll":
+        if compact == "minimal":
+            return [
+                ("Roll = ", "var"),
+                ("Crr × m × g × cosθ × v", "const"),
+                (" = ", "const"),
+                (fmt_float(roll, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Roll = ", "var"),
+                ("Crr[" + fmt_float(crr, 4) + "]", "const"),
+                ("×", "const"),
+                ("m[" + fmt_float(mass, 2) + "]", "const"),
+                ("×", "const"),
+                ("g[" + fmt_float(g, 2) + "]", "const"),
+                ("×cosθ[" + fmt_float(theta, 3) + "]", "var"),
+                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
+                (" = ", "const"),
+                (fmt_float(roll, 1) + "W", "result"),
+            ]
         return [
             ("Roll [W] = ", "var"),
             ("Crr [" + fmt_float(crr, 4) + "]", "const"),
@@ -345,6 +443,23 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(roll, 1) + " W", "result"),
         ]
     if row_key == "aero":
+        if compact == "minimal":
+            return [
+                ("Aero = ", "var"),
+                ("0.5×ρ×Cd×A×v^3", "const"),
+                (" = ", "const"),
+                (fmt_float(aero, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Aero = ", "var"),
+                ("0.5×ρ[" + fmt_float(rho, 3) + "]", "const"),
+                ("×Cd[" + fmt_float(cd, 3) + "]", "const"),
+                ("×A[" + fmt_float(area, 4) + "]", "const"),
+                ("×v[" + fmt_float(v_ms, 2) + "]^3", "var"),
+                (" = ", "const"),
+                (fmt_float(aero, 1) + "W", "result"),
+            ]
         return [
             ("Aero [W] = ", "var"),
             ("0.5", "const"),
@@ -361,6 +476,22 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(aero, 1) + " W", "result"),
         ]
     if row_key == "accel":
+        if compact == "minimal":
+            return [
+                ("Accel = ", "var"),
+                ("m×a×v", "const"),
+                (" = ", "const"),
+                (fmt_float(accel, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Accel = ", "var"),
+                ("m[" + fmt_float(mass, 2) + "]", "const"),
+                ("×a[" + fmt_float(accel_ms2, 3) + "]", "var"),
+                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
+                (" = ", "const"),
+                (fmt_float(accel, 1) + "W", "result"),
+            ]
         return [
             ("Accel [W] = ", "var"),
             ("m [" + fmt_float(mass, 2) + "]", "const"),
@@ -372,6 +503,23 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(accel, 1) + " W", "result"),
         ]
     if row_key == "grade":
+        if compact == "minimal":
+            return [
+                ("Grade = ", "var"),
+                ("m×g×sinθ×v", "const"),
+                (" = ", "const"),
+                (fmt_float(grade, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Grade = ", "var"),
+                ("m[" + fmt_float(mass, 2) + "]", "const"),
+                ("×g[" + fmt_float(g, 2) + "]", "const"),
+                ("×sinθ[" + fmt_float(theta, 3) + "]", "var"),
+                ("×v[" + fmt_float(v_ms, 2) + "]", "var"),
+                (" = ", "const"),
+                (fmt_float(grade, 1) + "W", "result"),
+            ]
         return [
             ("Grade [W] = ", "var"),
             ("m [" + fmt_float(mass, 2) + "]", "const"),
@@ -385,6 +533,25 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(grade, 1) + " W", "result"),
         ]
     if row_key == "wheel":
+        if compact == "minimal":
+            return [
+                ("Wheel = ", "var"),
+                ("max(sum,0)", "const"),
+                (" = ", "const"),
+                (fmt_float(wheel, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Wheel = ", "var"),
+                ("max(", "const"),
+                ("R[" + fmt_float(roll, 1) + "]", "var"),
+                ("+A[" + fmt_float(aero, 1) + "]", "var"),
+                ("+Ac[" + fmt_float(accel, 1) + "]", "var"),
+                ("+G[" + fmt_float(grade, 1) + "]", "var"),
+                (",0)", "const"),
+                (" = ", "const"),
+                (fmt_float(wheel, 1) + "W", "result"),
+            ]
         return [
             ("Wheel Demand [W] = ", "var"),
             ("max(", "const"),
@@ -400,6 +567,21 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(wheel, 1) + " W", "result"),
         ]
     if row_key == "engine_supply":
+        if compact == "minimal":
+            return [
+                ("Eng Supply = ", "var"),
+                ("Wheel/ηd", "const"),
+                (" = ", "const"),
+                (fmt_float(engine_supply, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Eng Supply = ", "var"),
+                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
+                ("/ηd[" + fmt_float(eta_d, 3) + "]", "const"),
+                (" = ", "const"),
+                (fmt_float(engine_supply, 1) + "W", "result"),
+            ]
         return [
             ("Engine Supply [W] = ", "var"),
             ("engine_on ? Wheel Demand [" + fmt_float(wheel, 1) + "] / ηd [" + fmt_float(eta_d, 3) + "] : 0", "const"),
@@ -407,6 +589,21 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(engine_supply, 1) + " W", "result"),
         ]
     if row_key == "drivetrain_loss":
+        if compact == "minimal":
+            return [
+                ("Drivetrain Loss = ", "var"),
+                ("Eng-Wheel", "const"),
+                (" = ", "const"),
+                (fmt_float(drivetrain_loss, 1) + "W", "result"),
+            ]
+        if compact:
+            return [
+                ("Drivetrain Loss = ", "var"),
+                ("Eng[" + fmt_float(engine_supply, 1) + "]", "var"),
+                ("-Wheel[" + fmt_float(wheel, 1) + "]", "var"),
+                (" = ", "const"),
+                (fmt_float(drivetrain_loss, 1) + "W", "result"),
+            ]
         return [
             ("Drivetrain Loss [W] = ", "var"),
             ("engine_on ? Engine Supply [" + fmt_float(engine_supply, 1) + "] - Wheel Demand [" + fmt_float(wheel, 1) + "] : 0", "const"),
@@ -414,6 +611,20 @@ def _formula_tokens_for_row(row_key, state):
             (fmt_float(drivetrain_loss, 1) + " W", "result"),
         ]
     if row_key == "drivetrain_loss_energy":
+        if compact == "minimal":
+            return [
+                ("Loss Energy = ", "var"),
+                ("∫Loss dt/1000", "const"),
+                (" = ", "const"),
+                (fmt_float(loss_energy_kj, 2) + "kJ", "result"),
+            ]
+        if compact:
+            return [
+                ("Loss Energy = ", "var"),
+                ("∫[" + fmt_float(drivetrain_loss, 1) + "]dt/1000", "const"),
+                (" = ", "const"),
+                (fmt_float(loss_energy_kj, 2) + "kJ", "result"),
+            ]
         return [
             ("Drivetrain Loss Energy [kJ] = ", "var"),
             ("∫ Drivetrain Loss [" + fmt_float(drivetrain_loss, 1) + " W] dt / 1000", "const"),
