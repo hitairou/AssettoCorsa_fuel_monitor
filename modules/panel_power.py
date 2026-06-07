@@ -442,7 +442,6 @@ def _fits_line(tokens, formula_w):
 
 def _formula_tokens_for_row(row_key, state, compact=False):
     v_ms = getattr(state, "observed_speed_ms", 0.0) if state is not None else 0.0
-    accel_ms2 = getattr(state, "accel_ms2", 0.0) if state is not None else 0.0
     theta = getattr(state, "theta_rad", 0.0) if state is not None else 0.0
     wheel = getattr(state, "demand_wheel_power_w", 0.0) if state is not None else 0.0
     roll = getattr(state, "demand_roll_power_w", 0.0) if state is not None else 0.0
@@ -460,159 +459,33 @@ def _formula_tokens_for_row(row_key, state, compact=False):
     area = float(getattr(state, "vehicle", {}).get("frontal_area", 0.3846)) if state is not None else 0.3846
 
     if row_key == "roll":
-        if compact == "minimal":
-            return [
-                ("Crr[" + fmt_float(crr, 4) + "]", "const"),
-                ("×", "const"),
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("g[" + fmt_float(g, 2) + "]", "const"),
-                ("×", "const"),
-                ("cosθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
-        if compact:
-            return [
-                ("Crr[" + fmt_float(crr, 4) + "]", "const"),
-                ("×", "const"),
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("g[" + fmt_float(g, 2) + "]", "const"),
-                ("×", "const"),
-                ("cosθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
         return [
-            ("Crr[" + fmt_float(crr, 4) + "]", "const"),
-            ("×", "const"),
-            ("m[" + fmt_float(mass, 1) + "]", "const"),
-            ("×", "const"),
-            ("g[" + fmt_float(g, 2) + "]", "const"),
-            ("×", "const"),
+            ("Crr[" + fmt_float(crr, 4) + "]×m[" + fmt_float(mass, 1) + "]×g[" + fmt_float(g, 2) + "]×", "const"),
             ("cosθ[" + fmt_float(theta, 3) + "]", "var"),
             ("×", "const"),
             ("v[" + fmt_float(v_ms, 2) + "]", "var"),
         ]
     if row_key == "aero":
-        if compact == "minimal":
-            return [
-                ("0.5", "const"),
-                ("×", "const"),
-                ("ρ[" + fmt_float(rho, 2) + "]", "const"),
-                ("×", "const"),
-                ("Cd[" + fmt_float(cd, 3) + "]", "const"),
-                ("×", "const"),
-                ("A[" + fmt_float(area, 3) + "]", "const"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-                ("^3", "const"),
-            ]
-        if compact:
-            return [
-                ("0.5", "const"),
-                ("×", "const"),
-                ("ρ[" + fmt_float(rho, 2) + "]", "const"),
-                ("×", "const"),
-                ("Cd[" + fmt_float(cd, 3) + "]", "const"),
-                ("×", "const"),
-                ("A[" + fmt_float(area, 3) + "]", "const"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-                ("^3", "const"),
-            ]
         return [
-            ("0.5", "const"),
-            ("×", "const"),
-            ("ρ[" + fmt_float(rho, 2) + "]", "const"),
-            ("×", "const"),
-            ("Cd[" + fmt_float(cd, 3) + "]", "const"),
-            ("×", "const"),
-            ("A[" + fmt_float(area, 3) + "]", "const"),
-            ("×", "const"),
+            ("0.5×ρ[" + fmt_float(rho, 2) + "]×Cd[" + fmt_float(cd, 3) + "]×A[" + fmt_float(area, 3) + "]×", "const"),
             ("v[" + fmt_float(v_ms, 2) + "]", "var"),
             ("^3", "const"),
         ]
     if row_key == "accel":
-        if compact == "minimal":
-            return [
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("a[" + fmt_float(accel_ms2, 2) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
-        if compact:
-            return [
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("a[" + fmt_float(accel_ms2, 2) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
         return [
-            ("m[" + fmt_float(mass, 1) + "]", "const"),
-            ("×", "const"),
-            ("a[" + fmt_float(accel_ms2, 2) + "]", "var"),
+            ("m[" + fmt_float(mass, 1) + "]×", "const"),
+            ("a[" + fmt_float(getattr(state, "accel_ms2", 0.0) if state is not None else 0.0, 2) + "]", "var"),
             ("×", "const"),
             ("v[" + fmt_float(v_ms, 2) + "]", "var"),
         ]
     if row_key == "grade":
-        if compact == "minimal":
-            return [
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("g[" + fmt_float(g, 2) + "]", "const"),
-                ("×", "const"),
-                ("sinθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
-        if compact:
-            return [
-                ("m[" + fmt_float(mass, 1) + "]", "const"),
-                ("×", "const"),
-                ("g[" + fmt_float(g, 2) + "]", "const"),
-                ("×", "const"),
-                ("sinθ[" + fmt_float(theta, 3) + "]", "var"),
-                ("×", "const"),
-                ("v[" + fmt_float(v_ms, 2) + "]", "var"),
-            ]
         return [
-            ("m[" + fmt_float(mass, 1) + "]", "const"),
-            ("×", "const"),
-            ("g[" + fmt_float(g, 2) + "]", "const"),
-            ("×", "const"),
+            ("m[" + fmt_float(mass, 1) + "]×g[" + fmt_float(g, 2) + "]×", "const"),
             ("sinθ[" + fmt_float(theta, 3) + "]", "var"),
             ("×", "const"),
             ("v[" + fmt_float(v_ms, 2) + "]", "var"),
         ]
     if row_key == "wheel":
-        if compact == "minimal":
-            return [
-                ("max(", "const"),
-                ("R[" + fmt_float(roll, 1) + "]", "var"),
-                ("+", "const"),
-                ("A[" + fmt_float(aero, 1) + "]", "var"),
-                ("+", "const"),
-                ("Ac[" + fmt_float(accel, 1) + "]", "var"),
-                ("+", "const"),
-                ("G[" + fmt_float(grade, 1) + "]", "var"),
-                (",0)", "const"),
-            ]
-        if compact:
-            return [
-                ("max(", "const"),
-                ("R[" + fmt_float(roll, 1) + "]", "var"),
-                ("+", "const"),
-                ("A[" + fmt_float(aero, 1) + "]", "var"),
-                ("+", "const"),
-                ("Ac[" + fmt_float(accel, 1) + "]", "var"),
-                ("+", "const"),
-                ("G[" + fmt_float(grade, 1) + "]", "var"),
-                (",0)", "const"),
-            ]
         return [
             ("max(", "const"),
             ("Roll[" + fmt_float(roll, 1) + "]", "var"),
@@ -625,46 +498,12 @@ def _formula_tokens_for_row(row_key, state, compact=False):
             (",0)", "const"),
         ]
     if row_key == "engine_supply":
-        if compact == "minimal":
-            return [
-                ("ON?", "const"),
-                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                ("/", "const"),
-                ("η[" + fmt_float(eta_d, 2) + "]", "var"),
-                (":0", "const"),
-            ]
-        if compact:
-            return [
-                ("ON?", "const"),
-                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                ("/", "const"),
-                ("η[" + fmt_float(eta_d, 2) + "]", "var"),
-                (":0", "const"),
-            ]
         return [
             ("ON?", "const"),
             ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-            ("/", "const"),
-            ("η[" + fmt_float(eta_d, 2) + "]", "var"),
-            (":0", "const"),
+            ("/η[" + fmt_float(eta_d, 2) + "]:0", "const"),
         ]
     if row_key == "drivetrain_loss":
-        if compact == "minimal":
-            return [
-                ("ON?", "const"),
-                ("Engine[" + fmt_float(engine_supply, 1) + "]", "var"),
-                ("-", "const"),
-                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                (":0", "const"),
-            ]
-        if compact:
-            return [
-                ("ON?", "const"),
-                ("Engine[" + fmt_float(engine_supply, 1) + "]", "var"),
-                ("-", "const"),
-                ("Wheel[" + fmt_float(wheel, 1) + "]", "var"),
-                (":0", "const"),
-            ]
         return [
             ("ON?", "const"),
             ("Engine[" + fmt_float(engine_supply, 1) + "]", "var"),
@@ -673,20 +512,8 @@ def _formula_tokens_for_row(row_key, state, compact=False):
             (":0", "const"),
         ]
     if row_key == "drivetrain_loss_energy":
-        if compact == "minimal":
-            return [
-                ("∫Loss[", "const"),
-                (fmt_float(drivetrain_loss, 1), "var"),
-                ("]dt/1000", "const"),
-            ]
-        if compact:
-            return [
-                ("∫Loss[", "const"),
-                (fmt_float(drivetrain_loss, 1), "var"),
-                ("]dt/1000", "const"),
-            ]
         return [
-            ("∫Loss[", "const"),
+            ("∫DrivetrainLoss[", "const"),
             (fmt_float(drivetrain_loss, 1), "var"),
             ("]dt/1000", "const"),
         ]
@@ -709,7 +536,7 @@ def _row_color_for_key(row_key):
 
 
 def _estimate_token_width(text):
-    return max(6, int(len(text) * 4.6) + 1)
+    return max(6, int(len(text) * 4.2) + 1)
 
 
 def _is_positive_metric(value):

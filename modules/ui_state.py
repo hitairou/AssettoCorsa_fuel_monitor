@@ -95,7 +95,7 @@ def load_saved_state(state):
         power_h = int(power_size[1])
     except Exception:
         power_w, power_h = WINDOW_SPECS["power"]["size"]
-    if power_w > 580 or power_w < 560 or power_h < 520:
+    if power_w != 560 or power_h < 520:
         # Power window width is clamped to avoid saved oversized layouts.
         state.ui_window_sizes["power"] = (560, max(power_h, 520))
 
